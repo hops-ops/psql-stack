@@ -1,0 +1,73 @@
+# code: language=yaml
+#
+# Helm Release: stackgres-operator
+#
+# StackGres provides a full PostgreSQL platform on Kubernetes with native
+# Citus support via SGShardedCluster CRDs.
+#
+
+{{- $sg := $state.stackgresOperator }}
+
+---
+apiVersion: helm.m.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: {{ $sg.name }}
+  annotations:
+    {{ setResourceNameAnnotation "stackgres-operator" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    chart:
+      name: stackgres-operator
+      repository: https://stackgres.io/downloads/stackgres-k8s/stackgres/helm/
+      version: 1.18.4
+    namespace: {{ $sg.namespace }}
+    {{- if $sg.overrideAllValues }}
+    values:
+      {{- toYaml $sg.overrideAllValues | nindent 6 }}
+    {{- else }}
+    {{- /* Chart defaults */}}
+    {{- $chartDefaults := dict
+      "deploy" (dict
+        "operator" true
+        "restapi" true
+      )
+    }}
+    {{- $mergedValues := mergeOverwrite $chartDefaults ($sg.values | default dict) }}
+    values:
+      {{- toYaml $mergedValues | nindent 6 }}
+    {{- end }}
+  rollbackLimit: 3
+  providerConfigRef:
+    name: {{ $state.helmProviderConfigRef.name }}
+    kind: {{ $state.helmProviderConfigRef.kind }}
+
+# ==============================================================================
+# Usage: Protect stackgres-operator from deletion until atlas-operator is deleted
+# ==============================================================================
+# Atlas manages schema migrations against StackGres-managed databases.
+# Delete Atlas operator first to avoid orphaned migration state.
+{{- if and $state.observed.stackgresOperator.ready $state.observed.atlasOperator.ready }}
+---
+apiVersion: protection.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  name: {{ $state.name }}-delete-atlas-operator-before-stackgres-operator
+  annotations:
+    {{ setResourceNameAnnotation "usage-sg-atlas" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  replayDeletion: true
+  of:
+    apiVersion: helm.m.crossplane.io/v1beta1
+    kind: Release
+    resourceRef:
+      name: {{ $sg.name }}
+  by:
+    apiVersion: helm.m.crossplane.io/v1beta1
+    kind: Release
+    resourceRef:
+      name: {{ $state.atlasOperator.name }}
+{{- end }}

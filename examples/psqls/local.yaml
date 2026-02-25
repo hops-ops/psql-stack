@@ -1,0 +1,9 @@
+apiVersion: stacks.hops.ops.com.ai/v1alpha1
+kind: Psql
+metadata:
+  name: psql
+  namespace: default
+spec:
+  clusterName: local
+  helmProviderConfigRef:
+    name: default

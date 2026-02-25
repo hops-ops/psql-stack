@@ -1,0 +1,41 @@
+# code: language=yaml
+#
+# Helm Release: atlas-operator
+#
+# Atlas Operator manages declarative database schema migrations via
+# AtlasMigration and AtlasSchema CRDs.
+#
+
+{{- $atlas := $state.atlasOperator }}
+
+---
+apiVersion: helm.m.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: {{ $atlas.name }}
+  annotations:
+    {{ setResourceNameAnnotation "atlas-operator" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    chart:
+      name: atlas-operator
+      repository: oci://ghcr.io/ariga/charts
+      version: 0.7.23
+    namespace: {{ $atlas.namespace }}
+    {{- if $atlas.overrideAllValues }}
+    values:
+      {{- toYaml $atlas.overrideAllValues | nindent 6 }}
+    {{- else }}
+    {{- $chartDefaults := dict
+      "prewarmDevDB" true
+    }}
+    {{- $mergedValues := mergeOverwrite $chartDefaults ($atlas.values | default dict) }}
+    values:
+      {{- toYaml $mergedValues | nindent 6 }}
+    {{- end }}
+  rollbackLimit: 3
+  providerConfigRef:
+    name: {{ $state.helmProviderConfigRef.name }}
+    kind: {{ $state.helmProviderConfigRef.kind }}

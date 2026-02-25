@@ -1,0 +1,11 @@
+# code: language=yaml
+#
+# Output XR status
+#
+
+{{- $xr := getCompositeResource . }}
+---
+apiVersion: {{ $xr.apiVersion }}
+kind: {{ $xr.kind }}
+status:
+  ready: {{ $state.status.ready }}

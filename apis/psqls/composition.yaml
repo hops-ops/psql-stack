@@ -1,0 +1,16 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: psqls.stacks.hops.ops.com.ai
+spec:
+  compositeTypeRef:
+    apiVersion: stacks.hops.ops.com.ai/v1alpha1
+    kind: Psql
+  mode: Pipeline
+  pipeline:
+  - functionRef:
+      name: hops-ops-stack-psqlrender
+    step: render
+  - functionRef:
+      name: crossplane-contrib-function-auto-ready
+    step: crossplane-contrib-function-auto-ready

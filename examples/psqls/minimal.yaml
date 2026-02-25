@@ -1,0 +1,7 @@
+apiVersion: stacks.hops.ops.com.ai/v1alpha1
+kind: Psql
+metadata:
+  name: psql
+  namespace: default
+spec:
+  clusterName: my-cluster

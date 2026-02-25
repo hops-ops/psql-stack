@@ -1,0 +1,39 @@
+# code: language=yaml
+#
+# Extract observed state from all composed resources and compute status
+#
+
+{{- $observed := $.observed.resources | default dict }}
+
+# ==============================================================================
+# Helper: check readiness of a composed resource by annotation name
+# ==============================================================================
+
+{{- $checkReady := dict }}
+{{- range $key := list "stackgres-operator" "atlas-operator" }}
+  {{- $entry := get $observed $key | default dict }}
+  {{- $resource := $entry.resource | default dict }}
+  {{- $status := $resource.status | default dict }}
+  {{- $ready := false }}
+  {{- range ($status.conditions | default list) }}
+    {{- if and (eq .type "Ready") (eq .status "True") }}
+      {{- $ready = true }}
+    {{- end }}
+  {{- end }}
+  {{- $checkReady = set $checkReady $key $ready }}
+{{- end }}
+
+# ==============================================================================
+# Set observed state
+# ==============================================================================
+{{- $state = set $state "observed" (dict
+  "stackgresOperator" (dict "ready" (get $checkReady "stackgres-operator"))
+  "atlasOperator" (dict "ready" (get $checkReady "atlas-operator"))
+) }}
+
+# ==============================================================================
+# Compute status (readiness determined by function-auto-ready)
+# ==============================================================================
+{{- $state = set $state "status" (dict
+  "ready" false
+) }}

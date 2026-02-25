@@ -1,0 +1,13 @@
+# Build output
+_output/
+.up/
+
+# Virtual environments
+.venv/
+
+# Temporary files
+.tmp/
+
+# E2E test credentials (never commit secrets)
+**/aws-creds
+tests/**/secrets/

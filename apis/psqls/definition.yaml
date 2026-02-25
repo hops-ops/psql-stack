@@ -1,0 +1,102 @@
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: psqls.stacks.hops.ops.com.ai
+spec:
+  group: stacks.hops.ops.com.ai
+  names:
+    kind: Psql
+    plural: psqls
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    referenceable: true
+    served: true
+    schema:
+      openAPIV3Schema:
+        description: Psql deploys the StackGres operator (with Citus support) and Atlas Operator for PostgreSQL database management and schema migrations.
+        type: object
+        properties:
+          spec:
+            description: PsqlSpec defines the desired state.
+            type: object
+            properties:
+              clusterName:
+                description: Name of the target cluster. Used as default for helmProviderConfigRef.name and resource naming.
+                type: string
+              managementPolicies:
+                description: Management policies for all composed resources. Defaults to ["*"].
+                type: array
+                items:
+                  type: string
+                default:
+                - "*"
+              labels:
+                description: Custom labels applied to all managed resources.
+                type: object
+                additionalProperties:
+                  type: string
+                x-kubernetes-preserve-unknown-fields: true
+              helmProviderConfigRef:
+                description: Reference to the Helm ProviderConfig. Defaults to clusterName.
+                type: object
+                properties:
+                  name:
+                    description: Name of the Helm ProviderConfig.
+                    type: string
+                  kind:
+                    description: Kind of the ProviderConfig. Defaults to ProviderConfig.
+                    type: string
+                    enum:
+                    - ProviderConfig
+                    - ClusterProviderConfig
+              namespace:
+                description: Shared namespace for all components. Defaults to stackgres. Per-component namespace overrides this.
+                type: string
+              stackgresOperator:
+                description: Configuration for the StackGres operator component.
+                type: object
+                properties:
+                  name:
+                    description: Release name. Defaults to stackgres-operator.
+                    type: string
+                  namespace:
+                    description: Namespace override for this component.
+                    type: string
+                  values:
+                    description: Helm values merged with chart defaults.
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  overrideAllValues:
+                    description: Helm values that replace all defaults for this component.
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+              atlasOperator:
+                description: Configuration for the Atlas Operator component (database schema migrations).
+                type: object
+                properties:
+                  name:
+                    description: Release name. Defaults to atlas-operator.
+                    type: string
+                  namespace:
+                    description: Namespace override for this component.
+                    type: string
+                  values:
+                    description: Helm values merged with chart defaults.
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  overrideAllValues:
+                    description: Helm values that replace all defaults for this component.
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+            required:
+            - clusterName
+          status:
+            description: PsqlStatus defines the observed state.
+            type: object
+            properties:
+              ready:
+                description: Overall readiness of the PostgreSQL stack.
+                type: boolean
+        required:
+        - spec

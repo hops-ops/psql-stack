@@ -1,0 +1,17 @@
+apiVersion: stacks.hops.ops.com.ai/v1alpha1
+kind: Psql
+metadata:
+  name: psql
+  namespace: default
+spec:
+  clusterName: production-cluster
+  namespace: stackgres
+  labels:
+    team: platform
+  stackgresOperator:
+    values:
+      deploy:
+        restapi: true
+  atlasOperator:
+    values:
+      prewarmDevDB: true

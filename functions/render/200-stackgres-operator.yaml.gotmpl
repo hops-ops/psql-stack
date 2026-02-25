@@ -22,6 +22,7 @@ spec:
     chart:
       name: stackgres-operator
       repository: https://stackgres.io/downloads/stackgres-k8s/stackgres/helm/
+      url: https://stackgres.io/downloads/stackgres-k8s/stackgres/1.18.4/helm/stackgres-operator.tgz
       version: 1.18.4
     namespace: {{ $sg.namespace }}
     {{- if $sg.overrideAllValues }}

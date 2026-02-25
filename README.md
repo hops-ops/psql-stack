@@ -1,0 +1,182 @@
+# stack-psql
+
+PostgreSQL management stack deploying StackGres and Atlas Operator as Helm releases with safe deletion ordering.
+
+## Why stack-psql?
+
+**Without stack-psql:**
+- Manual Helm installs of StackGres and Atlas on every cluster
+- No guaranteed deletion order — removing StackGres before Atlas leaves orphaned migration state
+- Inconsistent operator versions and configuration across environments
+- No declarative, reviewable representation of your database tooling
+
+**With stack-psql:**
+- Single claim deploys both operators with production defaults
+- Deletion ordering enforced via Usage resources — Atlas is always removed before StackGres
+- Consistent configuration across clusters with customizable Helm values
+- Crossplane manages lifecycle, drift detection, and rollback
+
+## What Gets Deployed
+
+- **StackGres Operator** — Full PostgreSQL lifecycle management with native Citus support for distributed PostgreSQL via `SGShardedCluster` CRDs
+- **Atlas Operator** — Declarative database schema migrations via `AtlasMigration` and `AtlasSchema` CRDs
+- **Usage resource** — Ensures Atlas is deleted before StackGres to prevent orphaned migration state
+
+## The Journey
+
+### Stage 1: Getting Started
+
+Deploy the stack on a single cluster with defaults. StackGres gets the REST API enabled, Atlas gets dev DB prewarming, and everything lands in the `stackgres` namespace.
+
+```yaml
+apiVersion: stacks.hops.ops.com.ai/v1alpha1
+kind: Psql
+metadata:
+  name: psql
+  namespace: default
+spec:
+  clusterName: my-cluster
+```
+
+### Stage 2: Team Usage
+
+Add labels for ownership tracking and customize Helm values per operator.
+
+```yaml
+apiVersion: stacks.hops.ops.com.ai/v1alpha1
+kind: Psql
+metadata:
+  name: psql
+  namespace: default
+spec:
+  clusterName: production-cluster
+  namespace: stackgres
+  labels:
+    team: platform
+  stackgresOperator:
+    values:
+      deploy:
+        restapi: true
+  atlasOperator:
+    values:
+      prewarmDevDB: true
+```
+
+### Stage 3: Multi-Cluster / Advanced
+
+Override namespaces per component, use a `ClusterProviderConfig`, or fully replace chart defaults.
+
+```yaml
+apiVersion: stacks.hops.ops.com.ai/v1alpha1
+kind: Psql
+metadata:
+  name: psql
+  namespace: default
+spec:
+  clusterName: production-cluster
+  helmProviderConfigRef:
+    name: production-cluster
+    kind: ClusterProviderConfig
+  stackgresOperator:
+    namespace: stackgres-system
+  atlasOperator:
+    namespace: atlas-system
+    overrideAllValues:
+      prewarmDevDB: false
+      extraEnvs:
+        - name: ATLAS_NO_UPDATE_NOTIFIER
+          value: "true"
+```
+
+### Local Development
+
+For local clusters (e.g. kind, k3d), point at the default Helm provider:
+
+```yaml
+apiVersion: stacks.hops.ops.com.ai/v1alpha1
+kind: Psql
+metadata:
+  name: psql
+  namespace: default
+spec:
+  clusterName: local
+  helmProviderConfigRef:
+    name: default
+```
+
+## Spec Reference
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `clusterName` | string | Yes | — | Target cluster name. Used as default for `helmProviderConfigRef.name` |
+| `namespace` | string | No | `stackgres` | Shared namespace for both operators |
+| `labels` | object | No | — | Custom labels merged with defaults |
+| `managementPolicies` | string[] | No | `["*"]` | Crossplane management policies |
+| `helmProviderConfigRef.name` | string | No | `clusterName` | Helm ProviderConfig name |
+| `helmProviderConfigRef.kind` | enum | No | `ProviderConfig` | `ProviderConfig` or `ClusterProviderConfig` |
+| `stackgresOperator.name` | string | No | `stackgres-operator` | Helm release name |
+| `stackgresOperator.namespace` | string | No | shared `namespace` | Namespace override |
+| `stackgresOperator.values` | object | No | — | Helm values merged with chart defaults |
+| `stackgresOperator.overrideAllValues` | object | No | — | Helm values replacing all defaults |
+| `atlasOperator.name` | string | No | `atlas-operator` | Helm release name |
+| `atlasOperator.namespace` | string | No | shared `namespace` | Namespace override |
+| `atlasOperator.values` | object | No | — | Helm values merged with chart defaults |
+| `atlasOperator.overrideAllValues` | object | No | — | Helm values replacing all defaults |
+
+### Helm Values Merging
+
+Each operator supports two modes:
+
+- **`values`** — Merged with chart defaults. Use this to tweak individual settings.
+- **`overrideAllValues`** — Replaces all defaults entirely. Use this when you need full control.
+
+If both are set, `overrideAllValues` wins.
+
+**Chart defaults for StackGres:**
+```yaml
+deploy:
+  operator: true
+  restapi: true
+```
+
+**Chart defaults for Atlas:**
+```yaml
+prewarmDevDB: true
+```
+
+## Status
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status.ready` | boolean | `true` when both operators are healthy |
+
+## Composed Resources
+
+| Resource | Kind | Purpose |
+|----------|------|---------|
+| `stackgres-operator` | `helm.m.crossplane.io/Release` | StackGres Helm release |
+| `atlas-operator` | `helm.m.crossplane.io/Release` | Atlas Operator Helm release |
+| `usage-sg-atlas` | `protection.crossplane.io/Usage` | Deletion ordering (created once both operators are ready) |
+
+## Dependencies
+
+| Kind | Package | Version |
+|------|---------|---------|
+| Function | `crossplane-contrib/function-auto-ready` | `>=v0.6.0` |
+| Provider | `crossplane-contrib/provider-helm` | `>=v1` |
+
+## Development
+
+```bash
+make render       # Render all examples
+make validate     # Validate against Crossplane schemas
+make test         # Run unit tests (KCL)
+make e2e          # Run E2E tests (requires cluster)
+make build        # Build the package
+make render:minimal   # Render a single example
+make validate:standard
+```
+
+## License
+
+Apache-2.0

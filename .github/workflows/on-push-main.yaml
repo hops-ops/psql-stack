@@ -50,11 +50,3 @@ jobs:
       DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
     with:
       useDeployKey: true
-      yqPatches: |
-        patches:
-          - filePath: .gitops/deploy/values.yaml
-            selector: .version
-            valuePrefix: "v"
-          - filePath: .gitops/deploy/Chart.yaml
-            selector: .version
-            valuePrefix: ""

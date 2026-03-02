@@ -27,7 +27,7 @@ permissions:
 
 jobs:
   validate:
-    uses: unbounded-tech/workflows-crossplane/.github/workflows/validate.yaml@v2.15.0
+    uses: unbounded-tech/workflows-crossplane/.github/workflows/validate.yaml@v2.16.0
     with:
       examples: |
         [
@@ -38,17 +38,17 @@ jobs:
       error_on_missing_schemas: true
 
   test:
-    uses: unbounded-tech/workflows-crossplane/.github/workflows/test.yaml@v2.15.0
+    uses: unbounded-tech/workflows-crossplane/.github/workflows/test.yaml@v2.16.0
 
   e2e:
-    uses: unbounded-tech/workflows-crossplane/.github/workflows/e2e.yaml@v2.15.0
+    uses: unbounded-tech/workflows-crossplane/.github/workflows/e2e.yaml@v2.16.0
 
   publish:
     needs:
       - validate
       - test
       - e2e
-    uses: unbounded-tech/workflows-crossplane/.github/workflows/publish.yaml@v2.15.0
+    uses: unbounded-tech/workflows-crossplane/.github/workflows/publish.yaml@v2.16.0
     secrets: inherit
     with:
       tag: pr-${{ github.event.pull_request.number }}-${{ github.sha }}

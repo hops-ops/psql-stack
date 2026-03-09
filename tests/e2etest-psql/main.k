@@ -1,6 +1,6 @@
 import datetime
 import math
-import models.ai.com.ops.hops.stacks.v1alpha1 as stacksv1alpha1
+import models.ai.com.ops.hops.v1alpha1 as stacksv1alpha1
 import models.io.upbound.dev.meta.v1alpha1 as metav1alpha1
 
 # ==============================================================================
@@ -73,7 +73,7 @@ _items = [
             # Deleted during cleanup (unless --skip-delete)
             # ==============================================================
             manifests = [
-                stacksv1alpha1.Psql {
+                stacksv1alpha1.PSQLStack {
                     metadata = {
                         name = _test_name
                         namespace = "default"

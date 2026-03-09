@@ -1,4 +1,4 @@
-import models.ai.com.ops.hops.stacks.v1alpha1 as stacksv1alpha1
+import models.ai.com.ops.hops.v1alpha1 as stacksv1alpha1
 import models.io.upbound.dev.meta.v1alpha1 as metav1alpha1
 import models.k8s.apimachinery.pkg.apis.meta.v1 as metav1
 
@@ -21,7 +21,7 @@ _items = [
             xrdPath = "apis/psqls/definition.yaml"
             timeoutSeconds = 60
             validate = False
-            xr = stacksv1alpha1.Psql {
+            xr = stacksv1alpha1.PSQLStack {
                 metadata.name = "test-psql"
                 spec.clusterName = "my-cluster"
             }
@@ -50,7 +50,7 @@ _items = [
             xrdPath = "apis/psqls/definition.yaml"
             timeoutSeconds = 60
             validate = False
-            xr = stacksv1alpha1.Psql {
+            xr = stacksv1alpha1.PSQLStack {
                 metadata.name = "labeled-psql"
                 spec = {
                     clusterName = "my-cluster"
@@ -98,7 +98,7 @@ _items = [
             xrdPath = "apis/psqls/definition.yaml"
             timeoutSeconds = 60
             validate = False
-            xr = stacksv1alpha1.Psql {
+            xr = stacksv1alpha1.PSQLStack {
                 metadata.name = "override-test"
                 spec = {
                     clusterName = "my-cluster"
@@ -132,7 +132,7 @@ _items = [
             xrdPath = "apis/psqls/definition.yaml"
             timeoutSeconds = 60
             validate = False
-            xr = stacksv1alpha1.Psql {
+            xr = stacksv1alpha1.PSQLStack {
                 metadata.name = "sg-merge"
                 spec = {
                     clusterName = "my-cluster"
@@ -167,7 +167,7 @@ _items = [
             xrdPath = "apis/psqls/definition.yaml"
             timeoutSeconds = 60
             validate = False
-            xr = stacksv1alpha1.Psql {
+            xr = stacksv1alpha1.PSQLStack {
                 metadata.name = "atlas-merge"
                 spec = {
                     clusterName = "my-cluster"
@@ -201,7 +201,7 @@ _items = [
             xrdPath = "apis/psqls/definition.yaml"
             timeoutSeconds = 60
             validate = False
-            xr = stacksv1alpha1.Psql {
+            xr = stacksv1alpha1.PSQLStack {
                 metadata.name = "ns-test"
                 spec = {
                     clusterName = "my-cluster"
@@ -235,7 +235,7 @@ _items = [
             xrdPath = "apis/psqls/definition.yaml"
             timeoutSeconds = 60
             validate = False
-            xr = stacksv1alpha1.Psql {
+            xr = stacksv1alpha1.PSQLStack {
                 metadata.name = "ns-override"
                 spec = {
                     clusterName = "my-cluster"
@@ -272,7 +272,7 @@ _items = [
             xrdPath = "apis/psqls/definition.yaml"
             timeoutSeconds = 60
             validate = False
-            xr = stacksv1alpha1.Psql {
+            xr = stacksv1alpha1.PSQLStack {
                 metadata.name = "provider-test"
                 spec.clusterName = "prod-cluster"
             }

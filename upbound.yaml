@@ -1,7 +1,7 @@
 apiVersion: meta.dev.upbound.io/v2alpha1
 kind: Project
 metadata:
-  name: stack-psql
+  name: psql-stack
 spec:
   dependsOn:
   - apiVersion: pkg.crossplane.io/v1
@@ -17,7 +17,7 @@ spec:
   license: Apache-2.0
   maintainer: Patrick Lee Scott <pat@patscott.io>
   readme: |
-    # stack-psql
+    # psql-stack
 
     Deploys a PostgreSQL management stack with correct deletion ordering.
     Composes StackGres operator and Atlas Operator as direct Helm releases.
@@ -25,5 +25,5 @@ spec:
     StackGres provides full PostgreSQL lifecycle management with native Citus
     support via SGShardedCluster CRDs. Atlas Operator provides declarative
     database schema migrations via AtlasMigration and AtlasSchema CRDs.
-  repository: ghcr.io/hops-ops/stack-psql
-  source: github.com/hops-ops/stack-psql
+  repository: ghcr.io/hops-ops/psql-stack
+  source: github.com/hops-ops/psql-stack

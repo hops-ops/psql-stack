@@ -1,12 +1,12 @@
 apiVersion: apiextensions.crossplane.io/v2
 kind: CompositeResourceDefinition
 metadata:
-  name: psqls.stacks.hops.ops.com.ai
+  name: psqlstacks.hops.ops.com.ai
 spec:
-  group: stacks.hops.ops.com.ai
+  group: hops.ops.com.ai
   names:
-    kind: Psql
-    plural: psqls
+    kind: PSQLStack
+    plural: psqlstacks
   scope: Namespaced
   versions:
   - name: v1alpha1
@@ -14,11 +14,11 @@ spec:
     served: true
     schema:
       openAPIV3Schema:
-        description: Psql deploys the StackGres operator (with Citus support) and Atlas Operator for PostgreSQL database management and schema migrations.
+        description: PSQLStack deploys the StackGres operator (with Citus support) and Atlas Operator for PostgreSQL database management and schema migrations.
         type: object
         properties:
           spec:
-            description: PsqlSpec defines the desired state.
+            description: PSQLStackSpec defines the desired state.
             type: object
             properties:
               clusterName:
@@ -92,7 +92,7 @@ spec:
             required:
             - clusterName
           status:
-            description: PsqlStatus defines the observed state.
+            description: PSQLStackStatus defines the observed state.
             type: object
             properties:
               ready:

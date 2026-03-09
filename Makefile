@@ -1,10 +1,10 @@
 SHELL := /bin/bash
 
-PACKAGE ?= stack-psql
-XRD_DIR := apis/psqls
+PACKAGE ?= psql-stack
+XRD_DIR := apis/psqlstacks
 COMPOSITION := $(XRD_DIR)/composition.yaml
 DEFINITION := $(XRD_DIR)/definition.yaml
-EXAMPLE_DEFAULT := examples/psqls/standard.yaml
+EXAMPLE_DEFAULT := examples/psqlstacks/standard.yaml
 RENDER_TESTS := $(wildcard tests/test-*)
 E2E_TESTS := $(wildcard tests/e2etest-*)
 
@@ -18,8 +18,8 @@ build:
 # Examples list - mirrors GitHub Actions workflow
 # Format: example_path::observed_resources_path (observed_resources_path is optional)
 EXAMPLES := \
-    examples/psqls/minimal.yaml:: \
-    examples/psqls/standard.yaml::
+    examples/psqlstacks/minimal.yaml:: \
+    examples/psqlstacks/standard.yaml::
 
 # Render all examples (parallel execution, output shown per-job when complete)
 render\:all:
@@ -92,11 +92,11 @@ validate: ; @$(MAKE) 'validate:all'
 
 # Single example targets
 render\:%:
-	@example="examples/psqls/$*.yaml"; \
+	@example="examples/psqlstacks/$*.yaml"; \
 	up composition render --xrd=$(DEFINITION) $(COMPOSITION) $$example
 
 validate\:%:
-	@example="examples/psqls/$*.yaml"; \
+	@example="examples/psqlstacks/$*.yaml"; \
 	up composition render --xrd=$(DEFINITION) $(COMPOSITION) $$example \
 		--include-full-xr --quiet | \
 		crossplane beta validate $(XRD_DIR) --error-on-missing-schemas -

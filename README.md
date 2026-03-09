@@ -1,16 +1,16 @@
-# stack-psql
+# psql-stack
 
 PostgreSQL management stack deploying StackGres and Atlas Operator as Helm releases with safe deletion ordering.
 
-## Why stack-psql?
+## Why psql-stack?
 
-**Without stack-psql:**
+**Without psql-stack:**
 - Manual Helm installs of StackGres and Atlas on every cluster
 - No guaranteed deletion order — removing StackGres before Atlas leaves orphaned migration state
 - Inconsistent operator versions and configuration across environments
 - No declarative, reviewable representation of your database tooling
 
-**With stack-psql:**
+**With psql-stack:**
 - Single claim deploys both operators with production defaults
 - Deletion ordering enforced via Usage resources — Atlas is always removed before StackGres
 - Consistent configuration across clusters with customizable Helm values
@@ -29,8 +29,8 @@ PostgreSQL management stack deploying StackGres and Atlas Operator as Helm relea
 Deploy the stack on a single cluster with defaults. StackGres gets the REST API enabled, Atlas gets dev DB prewarming, and everything lands in the `stackgres` namespace.
 
 ```yaml
-apiVersion: stacks.hops.ops.com.ai/v1alpha1
-kind: Psql
+apiVersion: hops.ops.com.ai/v1alpha1
+kind: PSQLStack
 metadata:
   name: psql
   namespace: default
@@ -43,8 +43,8 @@ spec:
 Add labels for ownership tracking and customize Helm values per operator.
 
 ```yaml
-apiVersion: stacks.hops.ops.com.ai/v1alpha1
-kind: Psql
+apiVersion: hops.ops.com.ai/v1alpha1
+kind: PSQLStack
 metadata:
   name: psql
   namespace: default
@@ -67,8 +67,8 @@ spec:
 Override namespaces per component, use a `ClusterProviderConfig`, or fully replace chart defaults.
 
 ```yaml
-apiVersion: stacks.hops.ops.com.ai/v1alpha1
-kind: Psql
+apiVersion: hops.ops.com.ai/v1alpha1
+kind: PSQLStack
 metadata:
   name: psql
   namespace: default
@@ -93,8 +93,8 @@ spec:
 For local clusters (e.g. kind, k3d), point at the default Helm provider:
 
 ```yaml
-apiVersion: stacks.hops.ops.com.ai/v1alpha1
-kind: Psql
+apiVersion: hops.ops.com.ai/v1alpha1
+kind: PSQLStack
 metadata:
   name: psql
   namespace: default

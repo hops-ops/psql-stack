@@ -1,5 +1,5 @@
-apiVersion: stacks.hops.ops.com.ai/v1alpha1
-kind: Psql
+apiVersion: hops.ops.com.ai/v1alpha1
+kind: PSQLStack
 metadata:
   name: psql
   namespace: default

@@ -17,8 +17,8 @@ _items = [
     metav1alpha1.CompositionTest {
         metadata.name = "minimal-renders-all-components"
         spec = {
-            compositionPath = "apis/psqls/composition.yaml"
-            xrdPath = "apis/psqls/definition.yaml"
+            compositionPath = "apis/psqlstacks/composition.yaml"
+            xrdPath = "apis/psqlstacks/definition.yaml"
             timeoutSeconds = 60
             validate = False
             xr = stacksv1alpha1.PSQLStack {
@@ -46,8 +46,8 @@ _items = [
     metav1alpha1.CompositionTest {
         metadata.name = "custom-labels-merged-with-defaults"
         spec = {
-            compositionPath = "apis/psqls/composition.yaml"
-            xrdPath = "apis/psqls/definition.yaml"
+            compositionPath = "apis/psqlstacks/composition.yaml"
+            xrdPath = "apis/psqlstacks/definition.yaml"
             timeoutSeconds = 60
             validate = False
             xr = stacksv1alpha1.PSQLStack {
@@ -94,8 +94,8 @@ _items = [
     metav1alpha1.CompositionTest {
         metadata.name = "stackgres-override-all-values-replaces-defaults"
         spec = {
-            compositionPath = "apis/psqls/composition.yaml"
-            xrdPath = "apis/psqls/definition.yaml"
+            compositionPath = "apis/psqlstacks/composition.yaml"
+            xrdPath = "apis/psqlstacks/definition.yaml"
             timeoutSeconds = 60
             validate = False
             xr = stacksv1alpha1.PSQLStack {
@@ -128,8 +128,8 @@ _items = [
     metav1alpha1.CompositionTest {
         metadata.name = "stackgres-values-merge-with-defaults"
         spec = {
-            compositionPath = "apis/psqls/composition.yaml"
-            xrdPath = "apis/psqls/definition.yaml"
+            compositionPath = "apis/psqlstacks/composition.yaml"
+            xrdPath = "apis/psqlstacks/definition.yaml"
             timeoutSeconds = 60
             validate = False
             xr = stacksv1alpha1.PSQLStack {
@@ -163,8 +163,8 @@ _items = [
     metav1alpha1.CompositionTest {
         metadata.name = "atlas-values-merge-with-defaults"
         spec = {
-            compositionPath = "apis/psqls/composition.yaml"
-            xrdPath = "apis/psqls/definition.yaml"
+            compositionPath = "apis/psqlstacks/composition.yaml"
+            xrdPath = "apis/psqlstacks/definition.yaml"
             timeoutSeconds = 60
             validate = False
             xr = stacksv1alpha1.PSQLStack {
@@ -197,8 +197,8 @@ _items = [
     metav1alpha1.CompositionTest {
         metadata.name = "custom-namespace-propagates"
         spec = {
-            compositionPath = "apis/psqls/composition.yaml"
-            xrdPath = "apis/psqls/definition.yaml"
+            compositionPath = "apis/psqlstacks/composition.yaml"
+            xrdPath = "apis/psqlstacks/definition.yaml"
             timeoutSeconds = 60
             validate = False
             xr = stacksv1alpha1.PSQLStack {
@@ -231,8 +231,8 @@ _items = [
     metav1alpha1.CompositionTest {
         metadata.name = "per-component-namespace-override"
         spec = {
-            compositionPath = "apis/psqls/composition.yaml"
-            xrdPath = "apis/psqls/definition.yaml"
+            compositionPath = "apis/psqlstacks/composition.yaml"
+            xrdPath = "apis/psqlstacks/definition.yaml"
             timeoutSeconds = 60
             validate = False
             xr = stacksv1alpha1.PSQLStack {
@@ -268,8 +268,8 @@ _items = [
     metav1alpha1.CompositionTest {
         metadata.name = "helm-provider-config-defaults-to-cluster-name"
         spec = {
-            compositionPath = "apis/psqls/composition.yaml"
-            xrdPath = "apis/psqls/definition.yaml"
+            compositionPath = "apis/psqlstacks/composition.yaml"
+            xrdPath = "apis/psqlstacks/definition.yaml"
             timeoutSeconds = 60
             validate = False
             xr = stacksv1alpha1.PSQLStack {

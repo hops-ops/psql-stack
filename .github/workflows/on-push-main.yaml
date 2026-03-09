@@ -27,10 +27,10 @@ jobs:
     with:
       examples: |
         [
-          { "example": "examples/psqls/minimal.yaml" },
-          { "example": "examples/psqls/standard.yaml" }
+          { "example": "examples/psqlstacks/minimal.yaml" },
+          { "example": "examples/psqlstacks/standard.yaml" }
         ]
-      api_path: apis/psqls
+      api_path: apis/psqlstacks
       error_on_missing_schemas: true
 
   test:

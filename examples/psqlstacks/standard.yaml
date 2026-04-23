@@ -13,14 +13,6 @@ spec:
   storageClass:
     create: true
     name: psql
-  externalSecrets:
-    enabled: true
-    connections:
-    - name: psql-production
-      namespace: stackgres
-      passwordPath: psql/production
-      host: test-pg.stackgres.svc.cluster.local
-      database: postgres
   stackgresOperator:
     values:
       deploy:

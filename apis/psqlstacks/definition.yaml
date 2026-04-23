@@ -96,53 +96,6 @@ spec:
                   allowVolumeExpansion:
                     type: boolean
                     default: true
-              externalSecrets:
-                description: External Secrets Operator integration. Pulls a password from AWS Secrets Manager (via hops secrets) and assembles it with non-secret connection config into a Kubernetes Secret containing a ready-to-use Postgres connection URL. Requires a ClusterSecretStore on the target cluster (e.g. from SecretStack).
-                type: object
-                properties:
-                  enabled:
-                    type: boolean
-                    default: false
-                  clusterSecretStoreName:
-                    description: Name of the ClusterSecretStore to read from. Defaults to "hops-aws-secrets-manager".
-                    type: string
-                  refreshInterval:
-                    description: How often ESO should re-pull the secret. Defaults to 1h.
-                    type: string
-                  connections:
-                    description: "List of Postgres connection secrets to compose. The user publishes just the password via `hops secrets sync aws`; the stack combines it with host/port/database/ns to emit a K8s Secret with url + discrete fields."
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        name:
-                          description: Target Kubernetes Secret name. Also used as the logical connection identifier.
-                          type: string
-                        namespace:
-                          description: Target namespace. Defaults to the stack namespace.
-                          type: string
-                        passwordPath:
-                          description: "AWS Secrets Manager secret name containing the password (what `hops secrets sync aws` writes)."
-                          type: string
-                        passwordKey:
-                          description: JSON key inside the AWS Secrets Manager secret holding the password. Defaults to "password".
-                          type: string
-                        host:
-                          description: "Postgres host (e.g. test-pg.stackgres.svc.cluster.local)."
-                          type: string
-                        port:
-                          description: Postgres port. Defaults to 5432.
-                          type: integer
-                        username:
-                          description: Postgres username. Defaults to "postgres".
-                          type: string
-                        database:
-                          description: Postgres database name to connect to.
-                          type: string
-                        sslmode:
-                          description: sslmode query parameter. Defaults to "disable".
-                          type: string
-                      required: [name, passwordPath, host, database]
               nodePool:
                 description: Optional dedicated Karpenter NodePool for PostgreSQL workloads. When enabled, StackGres operator and Atlas schedule here via nodeSelector + tolerations.
                 type: object

@@ -57,38 +57,6 @@
 {{- end }}
 
 # ==============================================================================
-# ExternalSecrets (opt-in) — sync AWS Secrets Manager values into K8s Secrets
-# via ESO. Requires a ClusterSecretStore to already exist on the target cluster.
-# ==============================================================================
-{{- $esoSpec := $spec.externalSecrets | default dict }}
-{{- $esoEnabled := false }}
-{{- if hasKey $esoSpec "enabled" }}
-  {{- $esoEnabled = $esoSpec.enabled }}
-{{- end }}
-{{- $esoStore := $esoSpec.clusterSecretStoreName | default "hops-aws-secrets-manager" }}
-{{- $esoRefreshInterval := $esoSpec.refreshInterval | default "1h" }}
-{{- $esoInputConnections := $esoSpec.connections | default list }}
-{{- $esoConnections := list }}
-{{- range $c := $esoInputConnections }}
-  {{- $port := $c.port | default 5432 }}
-  {{- $username := $c.username | default "postgres" }}
-  {{- $sslmode := $c.sslmode | default "disable" }}
-  {{- $passwordKey := $c.passwordKey | default "password" }}
-  {{- $targetNs := $c.namespace | default $namespace }}
-  {{- $esoConnections = append $esoConnections (dict
-    "name" $c.name
-    "namespace" $targetNs
-    "passwordPath" $c.passwordPath
-    "passwordKey" $passwordKey
-    "host" $c.host
-    "port" $port
-    "username" $username
-    "database" $c.database
-    "sslmode" $sslmode
-  ) }}
-{{- end }}
-
-# ==============================================================================
 # NodePool (opt-in) — dedicates a pool of nodes for PostgreSQL workloads.
 # Defaults: arm64 spot on r7g/m7g (memory-optimized + general-purpose Graviton).
 # ==============================================================================
@@ -141,12 +109,6 @@
     "reclaimPolicy" $scReclaimPolicy
     "volumeBindingMode" $scVolumeBindingMode
     "allowVolumeExpansion" $scAllowVolumeExpansion
-  )
-  "externalSecrets" (dict
-    "enabled" $esoEnabled
-    "clusterSecretStoreName" $esoStore
-    "refreshInterval" $esoRefreshInterval
-    "connections" $esoConnections
   )
   "nodePool" (dict
     "enabled" $nodePoolEnabled

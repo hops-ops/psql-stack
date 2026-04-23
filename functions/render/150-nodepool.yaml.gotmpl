@@ -1,0 +1,80 @@
+# code: language=yaml
+#
+# Karpenter NodePool for dedicated psql workloads.
+# StackGres operator + REST API + jobs and the Atlas operator are scheduled
+# here via nodeSelector + tolerations. Opt-in via spec.nodePool.enabled.
+#
+
+{{- if $state.nodePool.enabled }}
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-nodepool-psql
+  annotations:
+    {{ setResourceNameAnnotation "nodepool-psql" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    manifest:
+      apiVersion: karpenter.sh/v1
+      kind: NodePool
+      metadata:
+        name: {{ $state.nodePool.name }}
+      spec:
+        template:
+          metadata:
+            labels:
+              workload-type: psql
+          spec:
+            nodeClassRef:
+              group: eks.amazonaws.com
+              kind: NodeClass
+              name: {{ $state.nodePool.nodeClassName }}
+            taints:
+            - key: {{ $state.nodePool.taintKey }}
+              value: {{ $state.nodePool.taintValue | quote }}
+              effect: NoSchedule
+            requirements: {{ $state.nodePool.requirements | toJson }}
+        limits: {{ $state.nodePool.limits | toJson }}
+        disruption: {{ $state.nodePool.disruption | toJson }}
+  providerConfigRef:
+    name: {{ $state.kubernetesProviderConfigRef.name }}
+    kind: {{ $state.kubernetesProviderConfigRef.kind }}
+
+# ==============================================================================
+# Usages: protect NodePool from being deleted before the Helm releases.
+# If the NodePool is deleted first, operator pods lose their nodes and the
+# release cleanup hangs.
+# ==============================================================================
+{{- $pinnedReleases := dict
+  "stackgres-operator" "stackgresOperator"
+  "atlas-operator" "atlasOperator"
+}}
+{{- range $release, $obsKey := $pinnedReleases }}
+  {{- $releaseReady := (get (get $state.observed $obsKey | default dict) "ready") }}
+  {{- if and $state.observed.nodepoolPsql.ready $releaseReady }}
+---
+apiVersion: protection.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  name: {{ $state.name }}-delete-{{ $release }}-before-nodepool
+  annotations:
+    {{ setResourceNameAnnotation (printf "usage-np-%s" $release) }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  replayDeletion: true
+  of:
+    apiVersion: kubernetes.m.crossplane.io/v1alpha1
+    kind: Object
+    resourceRef:
+      name: {{ $state.name }}-nodepool-psql
+  by:
+    apiVersion: helm.m.crossplane.io/v1beta1
+    kind: Release
+    resourceRef:
+      name: {{ $release }}
+  {{- end }}
+{{- end }}
+{{- end }}

@@ -30,11 +30,25 @@ spec:
       {{- toYaml $sg.overrideAllValues | nindent 6 }}
     {{- else }}
     {{- /* Chart defaults */}}
+    {{- $operatorDefaults := dict }}
+    {{- $restapiDefaults := dict }}
+    {{- $jobsDefaults := dict }}
+    {{- if $state.nodePool.enabled }}
+      {{- $_ := set $operatorDefaults "nodeSelector" $state.nodePool.nodeSelector }}
+      {{- $_ := set $operatorDefaults "tolerations" $state.nodePool.tolerations }}
+      {{- $_ := set $restapiDefaults "nodeSelector" $state.nodePool.nodeSelector }}
+      {{- $_ := set $restapiDefaults "tolerations" $state.nodePool.tolerations }}
+      {{- $_ := set $jobsDefaults "nodeSelector" $state.nodePool.nodeSelector }}
+      {{- $_ := set $jobsDefaults "tolerations" $state.nodePool.tolerations }}
+    {{- end }}
     {{- $chartDefaults := dict
       "deploy" (dict
         "operator" true
         "restapi" true
       )
+      "operator" $operatorDefaults
+      "restapi" $restapiDefaults
+      "jobs" $jobsDefaults
     }}
     {{- $mergedValues := mergeOverwrite $chartDefaults ($sg.values | default dict) }}
     values:

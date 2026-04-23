@@ -29,6 +29,41 @@
   "kind" ($helmProviderConfigRef.kind | default "ProviderConfig")
 }}
 
+# Kubernetes provider config (defaults to clusterName)
+{{- $k8sProviderConfigRef := $spec.kubernetesProviderConfigRef | default dict }}
+{{- $k8sProviderConfigRef = dict
+  "name" ($k8sProviderConfigRef.name | default $clusterName)
+  "kind" ($k8sProviderConfigRef.kind | default "ProviderConfig")
+}}
+
+# ==============================================================================
+# NodePool (opt-in) — dedicates a pool of nodes for PostgreSQL workloads.
+# Defaults: arm64 spot on r7g/m7g (memory-optimized + general-purpose Graviton).
+# ==============================================================================
+{{- $nodePoolSpec := $spec.nodePool | default dict }}
+{{- $nodePoolEnabled := false }}
+{{- if hasKey $nodePoolSpec "enabled" }}
+  {{- $nodePoolEnabled = $nodePoolSpec.enabled }}
+{{- end }}
+{{- $nodePoolName := printf "%s-psql" $clusterName }}
+{{- $nodePoolNodeClassName := $nodePoolSpec.nodeClassName | default "default" }}
+{{- $nodePoolLimits := $nodePoolSpec.limits | default (dict "cpu" "16" "memory" "64Gi") }}
+{{- $nodePoolRequirements := $nodePoolSpec.requirements | default (list
+  (dict "key" "kubernetes.io/arch" "operator" "In" "values" (list "arm64"))
+  (dict "key" "karpenter.sh/capacity-type" "operator" "In" "values" (list "spot"))
+  (dict "key" "node.kubernetes.io/instance-type" "operator" "In" "values" (list "r7g.large" "r7g.xlarge" "m7g.large" "m7g.xlarge"))
+) }}
+{{- $nodePoolDisruption := $nodePoolSpec.disruption | default (dict "consolidationPolicy" "WhenEmptyOrUnderutilized" "consolidateAfter" "60s") }}
+
+{{- $nodePoolTaintKey := "psql" }}
+{{- $nodePoolTaintValue := "true" }}
+{{- $nodePoolNodeSelector := dict }}
+{{- $nodePoolTolerations := list }}
+{{- if $nodePoolEnabled }}
+  {{- $nodePoolNodeSelector = dict "workload-type" "psql" }}
+  {{- $nodePoolTolerations = list (dict "key" $nodePoolTaintKey "value" $nodePoolTaintValue "effect" "NoSchedule") }}
+{{- end }}
+
 # ==============================================================================
 # Per-component configuration
 # ==============================================================================
@@ -45,6 +80,19 @@
   "managementPolicies" $managementPolicies
   "labels" $labels
   "helmProviderConfigRef" $helmProviderConfigRef
+  "kubernetesProviderConfigRef" $k8sProviderConfigRef
+  "nodePool" (dict
+    "enabled" $nodePoolEnabled
+    "name" $nodePoolName
+    "nodeClassName" $nodePoolNodeClassName
+    "limits" $nodePoolLimits
+    "requirements" $nodePoolRequirements
+    "disruption" $nodePoolDisruption
+    "taintKey" $nodePoolTaintKey
+    "taintValue" $nodePoolTaintValue
+    "nodeSelector" $nodePoolNodeSelector
+    "tolerations" $nodePoolTolerations
+  )
   "stackgresOperator" (dict
     "name" ($sg.name | default "stackgres-operator")
     "namespace" ($sg.namespace | default $namespace)

@@ -20,7 +20,8 @@ PostgreSQL management stack deploying StackGres and Atlas Operator as Helm relea
 
 - **StackGres Operator** — Full PostgreSQL lifecycle management with native Citus support for distributed PostgreSQL via `SGShardedCluster` CRDs
 - **Atlas Operator** — Declarative database schema migrations via `AtlasMigration` and `AtlasSchema` CRDs
-- **Usage resource** — Ensures Atlas is deleted before StackGres to prevent orphaned migration state
+- **Karpenter NodePool** *(opt-in, `nodePool.enabled: true`)* — Dedicated nodes for database workloads. Default: arm64 spot on `r7g.large`/`r7g.xlarge`/`m7g.large`/`m7g.xlarge` (memory-optimized Graviton for cheap, low-contention scheduling). StackGres operator + REST API + jobs and Atlas are pinned here via nodeSelector + tolerations.
+- **Usage resources** — Atlas is deleted before StackGres to prevent orphaned migration state; Helm releases are deleted before the NodePool so pods drain cleanly.
 
 ## The Journey
 
@@ -40,7 +41,7 @@ spec:
 
 ### Stage 2: Team Usage
 
-Add labels for ownership tracking and customize Helm values per operator.
+Add labels for ownership tracking, pin operators to a dedicated NodePool, and customize Helm values.
 
 ```yaml
 apiVersion: hops.ops.com.ai/v1alpha1
@@ -53,6 +54,8 @@ spec:
   namespace: stackgres
   labels:
     team: platform
+  nodePool:
+    enabled: true
   stackgresOperator:
     values:
       deploy:
@@ -114,6 +117,15 @@ spec:
 | `managementPolicies` | string[] | No | `["*"]` | Crossplane management policies |
 | `helmProviderConfigRef.name` | string | No | `clusterName` | Helm ProviderConfig name |
 | `helmProviderConfigRef.kind` | enum | No | `ProviderConfig` | `ProviderConfig` or `ClusterProviderConfig` |
+| `kubernetesProviderConfigRef.name` | string | No | `clusterName` | Kubernetes ProviderConfig name (for the NodePool Object) |
+| `kubernetesProviderConfigRef.kind` | enum | No | `ProviderConfig` | `ProviderConfig` or `ClusterProviderConfig` |
+| `nodePool.enabled` | boolean | No | `false` | Create a dedicated Karpenter NodePool and schedule operators on it |
+| `nodePool.nodeClassName` | string | No | `default` | EKS NodeClass name |
+| `nodePool.limits.cpu` | string | No | `16` | Pool CPU limit |
+| `nodePool.limits.memory` | string | No | `64Gi` | Pool memory limit |
+| `nodePool.requirements` | array | No | arm64 spot `r7g.large`/`r7g.xlarge`/`m7g.large`/`m7g.xlarge` | Karpenter scheduling requirements |
+| `nodePool.disruption.consolidationPolicy` | enum | No | `WhenEmptyOrUnderutilized` | Karpenter consolidation policy |
+| `nodePool.disruption.consolidateAfter` | string | No | `60s` | Consolidation delay |
 | `stackgresOperator.name` | string | No | `stackgres-operator` | Helm release name |
 | `stackgresOperator.namespace` | string | No | shared `namespace` | Namespace override |
 | `stackgresOperator.values` | object | No | — | Helm values merged with chart defaults |
@@ -154,9 +166,12 @@ prewarmDevDB: true
 
 | Resource | Kind | Purpose |
 |----------|------|---------|
+| `nodepool-psql` | `kubernetes.m.crossplane.io/Object` | Karpenter NodePool (only when `nodePool.enabled: true`) |
 | `stackgres-operator` | `helm.m.crossplane.io/Release` | StackGres Helm release |
 | `atlas-operator` | `helm.m.crossplane.io/Release` | Atlas Operator Helm release |
-| `usage-sg-atlas` | `protection.crossplane.io/Usage` | Deletion ordering (created once both operators are ready) |
+| `usage-sg-atlas` | `protection.crossplane.io/Usage` | Atlas deleted before StackGres |
+| `usage-np-stackgres-operator` | `protection.crossplane.io/Usage` | StackGres drained before NodePool is deleted (when NodePool enabled) |
+| `usage-np-atlas-operator` | `protection.crossplane.io/Usage` | Atlas drained before NodePool is deleted (when NodePool enabled) |
 
 ## Dependencies
 
@@ -164,6 +179,7 @@ prewarmDevDB: true
 |------|---------|---------|
 | Function | `crossplane-contrib/function-auto-ready` | `>=v0.6.0` |
 | Provider | `crossplane-contrib/provider-helm` | `>=v1` |
+| Provider | `crossplane-contrib/provider-kubernetes` | `>=v1` (only used when `nodePool.enabled`) |
 
 ## Development
 

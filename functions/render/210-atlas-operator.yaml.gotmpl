@@ -31,6 +31,10 @@ spec:
     {{- $chartDefaults := dict
       "prewarmDevDB" true
     }}
+    {{- if $state.nodePool.enabled }}
+      {{- $_ := set $chartDefaults "nodeSelector" $state.nodePool.nodeSelector }}
+      {{- $_ := set $chartDefaults "tolerations" $state.nodePool.tolerations }}
+    {{- end }}
     {{- $mergedValues := mergeOverwrite $chartDefaults ($atlas.values | default dict) }}
     values:
       {{- toYaml $mergedValues | nindent 6 }}

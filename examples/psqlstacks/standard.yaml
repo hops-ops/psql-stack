@@ -8,6 +8,8 @@ spec:
   namespace: stackgres
   labels:
     team: platform
+  nodePool:
+    enabled: true
   stackgresOperator:
     values:
       deploy:

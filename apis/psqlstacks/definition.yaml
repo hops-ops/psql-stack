@@ -50,9 +50,65 @@ spec:
                     enum:
                     - ProviderConfig
                     - ClusterProviderConfig
+              kubernetesProviderConfigRef:
+                description: Reference to the Kubernetes ProviderConfig (used to create the Karpenter NodePool Object). Defaults to clusterName.
+                type: object
+                properties:
+                  name:
+                    description: Name of the Kubernetes ProviderConfig.
+                    type: string
+                  kind:
+                    description: Kind of the ProviderConfig. Defaults to ProviderConfig.
+                    type: string
+                    enum:
+                    - ProviderConfig
+                    - ClusterProviderConfig
               namespace:
                 description: Shared namespace for all components. Defaults to stackgres. Per-component namespace overrides this.
                 type: string
+              nodePool:
+                description: Optional dedicated Karpenter NodePool for PostgreSQL workloads. When enabled, StackGres operator and Atlas schedule here via nodeSelector + tolerations.
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                    default: false
+                  nodeClassName:
+                    description: EKS NodeClass to reference. Defaults to "default".
+                    type: string
+                  limits:
+                    type: object
+                    properties:
+                      cpu:
+                        type: string
+                      memory:
+                        type: string
+                  requirements:
+                    description: Karpenter scheduling requirements. Defaults to arm64 spot on r7g/m7g (memory-optimized, general-purpose).
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key:
+                          type: string
+                        operator:
+                          type: string
+                          enum: [In, NotIn, Exists, DoesNotExist, Gt, Lt]
+                        values:
+                          type: array
+                          items:
+                            type: string
+                      required: [key, operator]
+                  disruption:
+                    type: object
+                    properties:
+                      consolidationPolicy:
+                        type: string
+                        enum: [WhenEmpty, WhenEmptyOrUnderutilized]
+                        default: WhenEmptyOrUnderutilized
+                      consolidateAfter:
+                        type: string
+                        default: "60s"
               stackgresOperator:
                 description: Configuration for the StackGres operator component.
                 type: object

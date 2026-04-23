@@ -12,8 +12,13 @@ spec:
     kind: Provider
     package: xpkg.crossplane.io/crossplane-contrib/provider-helm
     version: '>=v1'
+  - apiVersion: pkg.crossplane.io/v1
+    kind: Provider
+    package: xpkg.crossplane.io/crossplane-contrib/provider-kubernetes
+    version: '>=v1'
   description: PostgreSQL stack deploying StackGres operator (with Citus support)
-    and Atlas Operator for schema migrations as Helm releases.
+    and Atlas Operator for schema migrations as Helm releases, with an optional dedicated
+    Karpenter NodePool for database workloads.
   license: Apache-2.0
   maintainer: Patrick Lee Scott <pat@patscott.io>
   readme: |

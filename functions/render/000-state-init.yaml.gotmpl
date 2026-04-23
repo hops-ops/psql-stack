@@ -46,7 +46,7 @@
 {{- if hasKey $sc "create" }}
   {{- $scCreate = $sc.create }}
 {{- end }}
-{{- $scName := $sc.name | default "gp3" }}
+{{- $scName := $sc.name | default "psql" }}
 {{- $scProvisioner := $sc.provisioner | default "ebs.csi.eks.amazonaws.com" }}
 {{- $scParameters := $sc.parameters | default (dict "type" "gp3" "fsType" "ext4") }}
 {{- $scReclaimPolicy := $sc.reclaimPolicy | default "Delete" }}

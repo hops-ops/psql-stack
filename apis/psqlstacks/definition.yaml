@@ -74,7 +74,7 @@ spec:
                     type: boolean
                     default: true
                   name:
-                    description: StorageClass name. Defaults to "gp3".
+                    description: StorageClass name. Defaults to "psql" (mirrors per-stack naming used by the observe stack — loki/prometheus/tempo).
                     type: string
                   provisioner:
                     description: CSI provisioner. Defaults to ebs.csi.eks.amazonaws.com (EKS Auto Mode).

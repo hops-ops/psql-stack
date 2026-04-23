@@ -12,7 +12,7 @@ spec:
     enabled: true
   storageClass:
     create: true
-    name: gp3
+    name: psql
   externalSecrets:
     enabled: true
     secrets:

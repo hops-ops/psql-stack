@@ -37,6 +37,55 @@
 }}
 
 # ==============================================================================
+# StorageClass (opt-in) — creates a gp3 StorageClass on the target cluster.
+# EKS Auto Mode uses ebs.csi.eks.amazonaws.com; the in-tree kubernetes.io/aws-ebs
+# provisioner (used by the legacy "gp2" class) does not work there.
+# ==============================================================================
+{{- $sc := $spec.storageClass | default dict }}
+{{- $scCreate := true }}
+{{- if hasKey $sc "create" }}
+  {{- $scCreate = $sc.create }}
+{{- end }}
+{{- $scName := $sc.name | default "gp3" }}
+{{- $scProvisioner := $sc.provisioner | default "ebs.csi.eks.amazonaws.com" }}
+{{- $scParameters := $sc.parameters | default (dict "type" "gp3" "fsType" "ext4") }}
+{{- $scReclaimPolicy := $sc.reclaimPolicy | default "Delete" }}
+{{- $scVolumeBindingMode := $sc.volumeBindingMode | default "WaitForFirstConsumer" }}
+{{- $scAllowVolumeExpansion := true }}
+{{- if hasKey $sc "allowVolumeExpansion" }}
+  {{- $scAllowVolumeExpansion = $sc.allowVolumeExpansion }}
+{{- end }}
+
+# ==============================================================================
+# ExternalSecrets (opt-in) — sync AWS Secrets Manager values into K8s Secrets
+# via ESO. Requires a ClusterSecretStore to already exist on the target cluster.
+# ==============================================================================
+{{- $esoSpec := $spec.externalSecrets | default dict }}
+{{- $esoEnabled := false }}
+{{- if hasKey $esoSpec "enabled" }}
+  {{- $esoEnabled = $esoSpec.enabled }}
+{{- end }}
+{{- $esoStore := $esoSpec.clusterSecretStoreName | default "hops-aws-secrets-manager" }}
+{{- $esoRefreshInterval := $esoSpec.refreshInterval | default "1h" }}
+{{- $esoInputSecrets := $esoSpec.secrets | default list }}
+{{- $esoSecrets := list }}
+{{- range $s := $esoInputSecrets }}
+  {{- $targetName := $s.name }}
+  {{- if not $targetName }}
+    {{- /* default K8s Secret name: last path segment, / → - */}}
+    {{- $parts := splitList "/" $s.path }}
+    {{- $targetName = index $parts (sub (len $parts) 1) }}
+    {{- $targetName = replace "_" "-" $targetName }}
+  {{- end }}
+  {{- $targetNs := $s.namespace | default $namespace }}
+  {{- $esoSecrets = append $esoSecrets (dict
+    "path" $s.path
+    "name" $targetName
+    "namespace" $targetNs
+  ) }}
+{{- end }}
+
+# ==============================================================================
 # NodePool (opt-in) — dedicates a pool of nodes for PostgreSQL workloads.
 # Defaults: arm64 spot on r7g/m7g (memory-optimized + general-purpose Graviton).
 # ==============================================================================
@@ -81,6 +130,21 @@
   "labels" $labels
   "helmProviderConfigRef" $helmProviderConfigRef
   "kubernetesProviderConfigRef" $k8sProviderConfigRef
+  "storageClass" (dict
+    "create" $scCreate
+    "name" $scName
+    "provisioner" $scProvisioner
+    "parameters" $scParameters
+    "reclaimPolicy" $scReclaimPolicy
+    "volumeBindingMode" $scVolumeBindingMode
+    "allowVolumeExpansion" $scAllowVolumeExpansion
+  )
+  "externalSecrets" (dict
+    "enabled" $esoEnabled
+    "clusterSecretStoreName" $esoStore
+    "refreshInterval" $esoRefreshInterval
+    "secrets" $esoSecrets
+  )
   "nodePool" (dict
     "enabled" $nodePoolEnabled
     "name" $nodePoolName

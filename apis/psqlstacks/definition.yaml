@@ -66,6 +66,65 @@ spec:
               namespace:
                 description: Shared namespace for all components. Defaults to stackgres. Per-component namespace overrides this.
                 type: string
+              storageClass:
+                description: "StorageClass for PostgreSQL workloads. Default provisioner is the EKS Auto Mode EBS CSI driver. Disable with create=false if the cluster already provides a suitable StorageClass."
+                type: object
+                properties:
+                  create:
+                    type: boolean
+                    default: true
+                  name:
+                    description: StorageClass name. Defaults to "gp3".
+                    type: string
+                  provisioner:
+                    description: CSI provisioner. Defaults to ebs.csi.eks.amazonaws.com (EKS Auto Mode).
+                    type: string
+                  parameters:
+                    description: Provisioner parameters. Defaults to gp3 + ext4.
+                    type: object
+                    additionalProperties:
+                      type: string
+                    x-kubernetes-preserve-unknown-fields: true
+                  reclaimPolicy:
+                    type: string
+                    enum: [Delete, Retain]
+                    default: Delete
+                  volumeBindingMode:
+                    type: string
+                    enum: [Immediate, WaitForFirstConsumer]
+                    default: WaitForFirstConsumer
+                  allowVolumeExpansion:
+                    type: boolean
+                    default: true
+              externalSecrets:
+                description: External Secrets Operator integration. Requires a ClusterSecretStore to already exist on the target cluster (provisioned by SecretStack or equivalent).
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                    default: false
+                  clusterSecretStoreName:
+                    description: Name of the ClusterSecretStore to read from. Defaults to "hops-aws-secrets-manager".
+                    type: string
+                  refreshInterval:
+                    description: How often ESO should re-pull the secret. Defaults to 1h.
+                    type: string
+                  secrets:
+                    description: List of AWS Secrets Manager paths to sync into Kubernetes Secrets.
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        path:
+                          description: AWS Secrets Manager secret name (what `hops secrets sync aws` writes).
+                          type: string
+                        name:
+                          description: Target Kubernetes Secret name. Defaults to the last path segment with "/" replaced by "-".
+                          type: string
+                        namespace:
+                          description: Target namespace. Defaults to the stack namespace.
+                          type: string
+                      required: [path]
               nodePool:
                 description: Optional dedicated Karpenter NodePool for PostgreSQL workloads. When enabled, StackGres operator and Atlas schedule here via nodeSelector + tolerations.
                 type: object

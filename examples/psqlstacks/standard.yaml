@@ -10,6 +10,14 @@ spec:
     team: platform
   nodePool:
     enabled: true
+  storageClass:
+    create: true
+    name: gp3
+  externalSecrets:
+    enabled: true
+    secrets:
+    - path: psql/production
+      name: psql-production
   stackgresOperator:
     values:
       deploy:

@@ -20,6 +20,8 @@ PostgreSQL management stack deploying StackGres and Atlas Operator as Helm relea
 
 - **StackGres Operator** — Full PostgreSQL lifecycle management with native Citus support for distributed PostgreSQL via `SGShardedCluster` CRDs
 - **Atlas Operator** — Declarative database schema migrations via `AtlasMigration` and `AtlasSchema` CRDs
+- **StorageClass** *(on by default, `storageClass.create: true`)* — `gp3` class backed by the EKS Auto Mode EBS CSI driver (`ebs.csi.eks.amazonaws.com`). The legacy `gp2` class on EKS Auto Mode uses a deprecated in-tree provisioner that no longer works.
+- **ExternalSecret(s)** *(opt-in, `externalSecrets.enabled: true`)* — For each entry in `externalSecrets.secrets[]`, creates an ESO `ExternalSecret` that syncs an AWS Secrets Manager value into a Kubernetes Secret. Values are published with `hops secrets sync aws`; a `ClusterSecretStore` (e.g. from `SecretStack`) must already exist on the target cluster.
 - **Karpenter NodePool** *(opt-in, `nodePool.enabled: true`)* — Dedicated nodes for database workloads. Default: arm64 spot on `r7g.large`/`r7g.xlarge`/`m7g.large`/`m7g.xlarge` (memory-optimized Graviton for cheap, low-contention scheduling). StackGres operator + REST API + jobs and Atlas are pinned here via nodeSelector + tolerations.
 - **Usage resources** — Atlas is deleted before StackGres to prevent orphaned migration state; Helm releases are deleted before the NodePool so pods drain cleanly.
 
@@ -126,6 +128,19 @@ spec:
 | `nodePool.requirements` | array | No | arm64 spot `r7g.large`/`r7g.xlarge`/`m7g.large`/`m7g.xlarge` | Karpenter scheduling requirements |
 | `nodePool.disruption.consolidationPolicy` | enum | No | `WhenEmptyOrUnderutilized` | Karpenter consolidation policy |
 | `nodePool.disruption.consolidateAfter` | string | No | `60s` | Consolidation delay |
+| `storageClass.create` | boolean | No | `true` | Create a StorageClass on the target cluster |
+| `storageClass.name` | string | No | `gp3` | StorageClass name |
+| `storageClass.provisioner` | string | No | `ebs.csi.eks.amazonaws.com` | CSI provisioner |
+| `storageClass.parameters` | object | No | `{type: gp3, fsType: ext4}` | Provisioner parameters |
+| `storageClass.volumeBindingMode` | enum | No | `WaitForFirstConsumer` | `Immediate` or `WaitForFirstConsumer` |
+| `storageClass.allowVolumeExpansion` | boolean | No | `true` | Allow PVC resize |
+| `storageClass.reclaimPolicy` | enum | No | `Delete` | `Delete` or `Retain` |
+| `externalSecrets.enabled` | boolean | No | `false` | Enable ESO integration |
+| `externalSecrets.clusterSecretStoreName` | string | No | `hops-aws-secrets-manager` | Name of the ClusterSecretStore |
+| `externalSecrets.refreshInterval` | string | No | `1h` | ESO refresh interval |
+| `externalSecrets.secrets[].path` | string | Yes | — | AWS Secrets Manager secret name (what `hops secrets sync aws` writes) |
+| `externalSecrets.secrets[].name` | string | No | derived from `path` | Target K8s Secret name |
+| `externalSecrets.secrets[].namespace` | string | No | stack `namespace` | Target namespace |
 | `stackgresOperator.name` | string | No | `stackgres-operator` | Helm release name |
 | `stackgresOperator.namespace` | string | No | shared `namespace` | Namespace override |
 | `stackgresOperator.values` | object | No | — | Helm values merged with chart defaults |
@@ -166,6 +181,8 @@ prewarmDevDB: true
 
 | Resource | Kind | Purpose |
 |----------|------|---------|
+| `storageclass` | `kubernetes.m.crossplane.io/Object` | StorageClass (default `gp3`; when `storageClass.create: true`) |
+| `extsecret-<name>` | `kubernetes.m.crossplane.io/Object` | One per `externalSecrets.secrets[]` entry; wraps an ESO `ExternalSecret` |
 | `nodepool-psql` | `kubernetes.m.crossplane.io/Object` | Karpenter NodePool (only when `nodePool.enabled: true`) |
 | `stackgres-operator` | `helm.m.crossplane.io/Release` | StackGres Helm release |
 | `atlas-operator` | `helm.m.crossplane.io/Release` | Atlas Operator Helm release |

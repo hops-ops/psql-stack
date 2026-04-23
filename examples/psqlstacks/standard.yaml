@@ -15,9 +15,12 @@ spec:
     name: psql
   externalSecrets:
     enabled: true
-    secrets:
-    - path: psql/production
-      name: psql-production
+    connections:
+    - name: psql-production
+      namespace: stackgres
+      passwordPath: psql/production
+      host: test-pg.stackgres.svc.cluster.local
+      database: postgres
   stackgresOperator:
     values:
       deploy:

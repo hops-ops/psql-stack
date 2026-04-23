@@ -67,21 +67,24 @@
 {{- end }}
 {{- $esoStore := $esoSpec.clusterSecretStoreName | default "hops-aws-secrets-manager" }}
 {{- $esoRefreshInterval := $esoSpec.refreshInterval | default "1h" }}
-{{- $esoInputSecrets := $esoSpec.secrets | default list }}
-{{- $esoSecrets := list }}
-{{- range $s := $esoInputSecrets }}
-  {{- $targetName := $s.name }}
-  {{- if not $targetName }}
-    {{- /* default K8s Secret name: last path segment, / → - */}}
-    {{- $parts := splitList "/" $s.path }}
-    {{- $targetName = index $parts (sub (len $parts) 1) }}
-    {{- $targetName = replace "_" "-" $targetName }}
-  {{- end }}
-  {{- $targetNs := $s.namespace | default $namespace }}
-  {{- $esoSecrets = append $esoSecrets (dict
-    "path" $s.path
-    "name" $targetName
+{{- $esoInputConnections := $esoSpec.connections | default list }}
+{{- $esoConnections := list }}
+{{- range $c := $esoInputConnections }}
+  {{- $port := $c.port | default 5432 }}
+  {{- $username := $c.username | default "postgres" }}
+  {{- $sslmode := $c.sslmode | default "disable" }}
+  {{- $passwordKey := $c.passwordKey | default "password" }}
+  {{- $targetNs := $c.namespace | default $namespace }}
+  {{- $esoConnections = append $esoConnections (dict
+    "name" $c.name
     "namespace" $targetNs
+    "passwordPath" $c.passwordPath
+    "passwordKey" $passwordKey
+    "host" $c.host
+    "port" $port
+    "username" $username
+    "database" $c.database
+    "sslmode" $sslmode
   ) }}
 {{- end }}
 
@@ -143,7 +146,7 @@
     "enabled" $esoEnabled
     "clusterSecretStoreName" $esoStore
     "refreshInterval" $esoRefreshInterval
-    "secrets" $esoSecrets
+    "connections" $esoConnections
   )
   "nodePool" (dict
     "enabled" $nodePoolEnabled

@@ -21,7 +21,7 @@ PostgreSQL management stack deploying StackGres and Atlas Operator as Helm relea
 - **StackGres Operator** — Full PostgreSQL lifecycle management with native Citus support for distributed PostgreSQL via `SGShardedCluster` CRDs
 - **Atlas Operator** — Declarative database schema migrations via `AtlasMigration` and `AtlasSchema` CRDs
 - **StorageClass** *(on by default, `storageClass.create: true`)* — `psql` class backed by the EKS Auto Mode EBS CSI driver (`ebs.csi.eks.amazonaws.com`). Name mirrors the per-stack convention used by the observe stack (`loki`/`prometheus`/`tempo`). The legacy `gp2` class on EKS Auto Mode uses a deprecated in-tree provisioner that no longer works.
-- **ExternalSecret(s)** *(opt-in, `externalSecrets.enabled: true`)* — For each entry in `externalSecrets.secrets[]`, creates an ESO `ExternalSecret` that syncs an AWS Secrets Manager value into a Kubernetes Secret. Values are published with `hops secrets sync aws`; a `ClusterSecretStore` (e.g. from `SecretStack`) must already exist on the target cluster.
+- **Postgres connection Secret(s)** *(opt-in, `externalSecrets.enabled: true`)* — For each entry in `externalSecrets.connections[]`, composes an ESO `ExternalSecret` that pulls a single password from AWS Secrets Manager (published with `hops secrets sync aws`) and templates it with non-secret config (host/port/database/username/sslmode) into a K8s Secret with keys `url`, `host`, `port`, `username`, `database`, `sslmode`, `password`. Consumers reference whichever key they need: `AtlasSchema.devURLFrom` → `url`, `SGCluster.spec.configurations.credentials.users.superuser.password` → `password`, etc.
 - **Karpenter NodePool** *(opt-in, `nodePool.enabled: true`)* — Dedicated nodes for database workloads. Default: arm64 spot on `r7g.large`/`r7g.xlarge`/`m7g.large`/`m7g.xlarge` (memory-optimized Graviton for cheap, low-contention scheduling). StackGres operator + REST API + jobs and Atlas are pinned here via nodeSelector + tolerations.
 - **Usage resources** — Atlas is deleted before StackGres to prevent orphaned migration state; Helm releases are deleted before the NodePool so pods drain cleanly.
 
@@ -138,9 +138,15 @@ spec:
 | `externalSecrets.enabled` | boolean | No | `false` | Enable ESO integration |
 | `externalSecrets.clusterSecretStoreName` | string | No | `hops-aws-secrets-manager` | Name of the ClusterSecretStore |
 | `externalSecrets.refreshInterval` | string | No | `1h` | ESO refresh interval |
-| `externalSecrets.secrets[].path` | string | Yes | — | AWS Secrets Manager secret name (what `hops secrets sync aws` writes) |
-| `externalSecrets.secrets[].name` | string | No | derived from `path` | Target K8s Secret name |
-| `externalSecrets.secrets[].namespace` | string | No | stack `namespace` | Target namespace |
+| `externalSecrets.connections[].name` | string | Yes | — | K8s Secret name (also the connection identifier) |
+| `externalSecrets.connections[].namespace` | string | No | stack `namespace` | K8s Secret namespace |
+| `externalSecrets.connections[].passwordPath` | string | Yes | — | AWS Secrets Manager secret name containing the password |
+| `externalSecrets.connections[].passwordKey` | string | No | `password` | JSON key in the AWS secret holding the password |
+| `externalSecrets.connections[].host` | string | Yes | — | Postgres host (e.g. `test-pg.stackgres.svc.cluster.local`) |
+| `externalSecrets.connections[].port` | integer | No | `5432` | Postgres port |
+| `externalSecrets.connections[].username` | string | No | `postgres` | Postgres username |
+| `externalSecrets.connections[].database` | string | Yes | — | Database name |
+| `externalSecrets.connections[].sslmode` | string | No | `disable` | sslmode query parameter |
 | `stackgresOperator.name` | string | No | `stackgres-operator` | Helm release name |
 | `stackgresOperator.namespace` | string | No | shared `namespace` | Namespace override |
 | `stackgresOperator.values` | object | No | — | Helm values merged with chart defaults |
@@ -182,7 +188,7 @@ prewarmDevDB: true
 | Resource | Kind | Purpose |
 |----------|------|---------|
 | `storageclass` | `kubernetes.m.crossplane.io/Object` | StorageClass (default name `psql`; when `storageClass.create: true`) |
-| `extsecret-<name>` | `kubernetes.m.crossplane.io/Object` | One per `externalSecrets.secrets[]` entry; wraps an ESO `ExternalSecret` |
+| `connsecret-<name>` | `kubernetes.m.crossplane.io/Object` | One per `externalSecrets.connections[]` entry; wraps an ESO `ExternalSecret` that assembles a connection Secret |
 | `nodepool-psql` | `kubernetes.m.crossplane.io/Object` | Karpenter NodePool (only when `nodePool.enabled: true`) |
 | `stackgres-operator` | `helm.m.crossplane.io/Release` | StackGres Helm release |
 | `atlas-operator` | `helm.m.crossplane.io/Release` | Atlas Operator Helm release |

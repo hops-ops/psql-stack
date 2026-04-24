@@ -14,7 +14,7 @@ spec:
     served: true
     schema:
       openAPIV3Schema:
-        description: PSQLStack deploys the StackGres operator (with Citus support) and Atlas Operator for PostgreSQL database management and schema migrations.
+        description: PSQLStack deploys CloudNativePG, the cnpg-i-scale-to-zero plugin, and the Atlas Operator. It's the platform layer — per-app serving clusters live in PSQLCluster; ephemeral forks live in PSQLBranch.
         type: object
         properties:
           spec:
@@ -51,7 +51,7 @@ spec:
                     - ProviderConfig
                     - ClusterProviderConfig
               kubernetesProviderConfigRef:
-                description: Reference to the Kubernetes ProviderConfig (used to create the Karpenter NodePool Object). Defaults to clusterName.
+                description: Reference to the Kubernetes ProviderConfig (used to create the Karpenter NodePool Object and to apply the scale-to-zero plugin manifest). Defaults to clusterName.
                 type: object
                 properties:
                   name:
@@ -64,17 +64,17 @@ spec:
                     - ProviderConfig
                     - ClusterProviderConfig
               namespace:
-                description: Shared namespace for all components. Defaults to stackgres. Per-component namespace overrides this.
+                description: Shared namespace for CNPG operator, scale-to-zero plugin, and Atlas operator. Defaults to cnpg-system. Per-component namespace overrides this.
                 type: string
               storageClass:
-                description: "StorageClass for PostgreSQL workloads. Default provisioner is the EKS Auto Mode EBS CSI driver. Disable with create=false if the cluster already provides a suitable StorageClass."
+                description: "StorageClass for PostgreSQL workloads. Default provisioner is the EKS Auto Mode EBS CSI driver. Disable with create=false if the cluster already provides a suitable StorageClass. (Phase 2 of the CNPG pivot will replace this with a three-profile storage block.)"
                 type: object
                 properties:
                   create:
                     type: boolean
                     default: true
                   name:
-                    description: StorageClass name. Defaults to "psql" (mirrors per-stack naming used by the observe stack — loki/prometheus/tempo).
+                    description: StorageClass name. Defaults to "psql".
                     type: string
                   provisioner:
                     description: CSI provisioner. Defaults to ebs.csi.eks.amazonaws.com (EKS Auto Mode).
@@ -97,7 +97,7 @@ spec:
                     type: boolean
                     default: true
               nodePool:
-                description: Optional dedicated Karpenter NodePool for PostgreSQL workloads. When enabled, StackGres operator and Atlas schedule here via nodeSelector + tolerations.
+                description: Optional dedicated Karpenter NodePool for PostgreSQL workloads. When enabled, CNPG, the scale-to-zero plugin, and Atlas schedule here via nodeSelector + tolerations. (Phase 3 of the CNPG pivot will split this into branches / primary sub-pools with hugepages + nvme-tcp pre-configured.)
                 type: object
                 properties:
                   enabled:
@@ -114,7 +114,7 @@ spec:
                       memory:
                         type: string
                   requirements:
-                    description: Karpenter scheduling requirements. Defaults to arm64 spot on r7g/m7g (memory-optimized, general-purpose).
+                    description: Karpenter scheduling requirements. Defaults to arm64 spot on r7g/m7g (memory-optimized + general-purpose Graviton).
                     type: array
                     items:
                       type: object
@@ -139,15 +139,18 @@ spec:
                       consolidateAfter:
                         type: string
                         default: "60s"
-              stackgresOperator:
-                description: Configuration for the StackGres operator component.
+              cnpg:
+                description: Configuration for the CloudNativePG operator Helm release.
                 type: object
                 properties:
                   name:
-                    description: Release name. Defaults to stackgres-operator.
+                    description: Helm release name. Defaults to cloudnative-pg.
                     type: string
                   namespace:
                     description: Namespace override for this component.
+                    type: string
+                  chartVersion:
+                    description: CNPG Helm chart version. Defaults to 0.27.1 (tracks CNPG 1.29.x).
                     type: string
                   values:
                     description: Helm values merged with chart defaults.
@@ -157,8 +160,22 @@ spec:
                     description: Helm values that replace all defaults for this component.
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
+              scaleToZeroPlugin:
+                description: "Configuration for the cnpg-i-scale-to-zero plugin (github.com/xataio/cnpg-i-scale-to-zero). Installed via upstream release manifest. Zero cost when no PSQLCluster opts into scale-to-zero."
+                type: object
+                properties:
+                  enabled:
+                    description: Default true — the plugin is zero-cost when unused and per-cluster opt-in is cheap.
+                    type: boolean
+                    default: true
+                  version:
+                    description: Plugin release tag. The manifest URL pins to this. Defaults to v0.1.7.
+                    type: string
+                  namespace:
+                    description: Namespace override for the plugin install. Defaults to cnpg-system (plugin manifest creates the namespace if missing).
+                    type: string
               atlasOperator:
-                description: Configuration for the Atlas Operator component (database schema migrations).
+                description: Configuration for the Atlas Operator component (declarative database schema migrations).
                 type: object
                 properties:
                   name:
@@ -182,7 +199,7 @@ spec:
             type: object
             properties:
               ready:
-                description: Overall readiness of the PostgreSQL stack.
+                description: Overall readiness of the stack (CNPG + scale-to-zero plugin + Atlas).
                 type: boolean
         required:
         - spec

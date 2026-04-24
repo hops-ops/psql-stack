@@ -12,7 +12,7 @@
 # ==============================================================================
 {{- $name := $metadata.name | default "psql" }}
 {{- $clusterName := $spec.clusterName | default $name }}
-{{- $namespace := $spec.namespace | default "stackgres" }}
+{{- $namespace := $spec.namespace | default "cnpg-system" }}
 {{- $managementPolicies := $spec.managementPolicies | default (list "*") }}
 
 # Labels
@@ -37,9 +37,10 @@
 }}
 
 # ==============================================================================
-# StorageClass (opt-in) — creates a gp3 StorageClass on the target cluster.
-# EKS Auto Mode uses ebs.csi.eks.amazonaws.com; the in-tree kubernetes.io/aws-ebs
-# provisioner (used by the legacy "gp2" class) does not work there.
+# StorageClass (opt-in, default on) — creates a gp3 StorageClass on the target
+# cluster. EKS Auto Mode uses ebs.csi.eks.amazonaws.com.
+# Phase 2 of the CNPG pivot replaces this block with a three-profile model
+# (mayastor / lvm / ebs).
 # ==============================================================================
 {{- $sc := $spec.storageClass | default dict }}
 {{- $scCreate := true }}
@@ -59,6 +60,8 @@
 # ==============================================================================
 # NodePool (opt-in) — dedicates a pool of nodes for PostgreSQL workloads.
 # Defaults: arm64 spot on r7g/m7g (memory-optimized + general-purpose Graviton).
+# Phase 3 of the CNPG pivot splits this into branches / primary sub-pools with
+# hugepages + nvme-tcp pre-configured for Mayastor.
 # ==============================================================================
 {{- $nodePoolSpec := $spec.nodePool | default dict }}
 {{- $nodePoolEnabled := false }}
@@ -87,7 +90,12 @@
 # ==============================================================================
 # Per-component configuration
 # ==============================================================================
-{{- $sg := $spec.stackgresOperator | default dict }}
+{{- $cnpg := $spec.cnpg | default dict }}
+{{- $s2z := $spec.scaleToZeroPlugin | default dict }}
+{{- $s2zEnabled := true }}
+{{- if hasKey $s2z "enabled" }}
+  {{- $s2zEnabled = $s2z.enabled }}
+{{- end }}
 {{- $atlas := $spec.atlasOperator | default dict }}
 
 # ==============================================================================
@@ -122,11 +130,17 @@
     "nodeSelector" $nodePoolNodeSelector
     "tolerations" $nodePoolTolerations
   )
-  "stackgresOperator" (dict
-    "name" ($sg.name | default "stackgres-operator")
-    "namespace" ($sg.namespace | default $namespace)
-    "values" ($sg.values | default dict)
-    "overrideAllValues" ($sg.overrideAllValues | default dict)
+  "cnpg" (dict
+    "name" ($cnpg.name | default "cloudnative-pg")
+    "namespace" ($cnpg.namespace | default $namespace)
+    "chartVersion" ($cnpg.chartVersion | default "0.27.1")
+    "values" ($cnpg.values | default dict)
+    "overrideAllValues" ($cnpg.overrideAllValues | default dict)
+  )
+  "scaleToZeroPlugin" (dict
+    "enabled" $s2zEnabled
+    "version" ($s2z.version | default "v0.1.7")
+    "namespace" ($s2z.namespace | default $namespace)
   )
   "atlasOperator" (dict
     "name" ($atlas.name | default "atlas-operator")

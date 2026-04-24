@@ -1,0 +1,77 @@
+# code: language=yaml
+#
+# Helm Release: cloudnative-pg operator
+#
+# CloudNativePG is a CNCF PostgreSQL operator for Kubernetes covering the
+# full lifecycle of PostgreSQL clusters (HA, streaming replication,
+# VolumeSnapshot backups, Barman cloud, pg_basebackup clones, CNPG-I
+# plugin protocol for extensions like scale-to-zero).
+#
+# Chart: https://cloudnative-pg.github.io/charts (chart name: cloudnative-pg)
+# Upstream: https://github.com/cloudnative-pg/cloudnative-pg
+#
+
+{{- $cnpg := $state.cnpg }}
+
+---
+apiVersion: helm.m.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: {{ $cnpg.name }}
+  annotations:
+    {{ setResourceNameAnnotation "cnpg-operator" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    chart:
+      name: cloudnative-pg
+      repository: https://cloudnative-pg.github.io/charts
+      version: {{ $cnpg.chartVersion | quote }}
+    namespace: {{ $cnpg.namespace }}
+    {{- if $cnpg.overrideAllValues }}
+    values:
+      {{- toYaml $cnpg.overrideAllValues | nindent 6 }}
+    {{- else }}
+    {{- /* Chart defaults */}}
+    {{- $chartDefaults := dict }}
+    {{- if $state.nodePool.enabled }}
+      {{- $_ := set $chartDefaults "nodeSelector" $state.nodePool.nodeSelector }}
+      {{- $_ := set $chartDefaults "tolerations" $state.nodePool.tolerations }}
+    {{- end }}
+    {{- $mergedValues := mergeOverwrite $chartDefaults ($cnpg.values | default dict) }}
+    values:
+      {{- toYaml $mergedValues | nindent 6 }}
+    {{- end }}
+  rollbackLimit: 3
+  providerConfigRef:
+    name: {{ $state.helmProviderConfigRef.name }}
+    kind: {{ $state.helmProviderConfigRef.kind }}
+
+# ==============================================================================
+# Usage: Protect cnpg-operator from deletion until atlas-operator is deleted.
+# Atlas manages schema migrations against CNPG-managed databases; deleting CNPG
+# first would orphan Atlas's migration state.
+# ==============================================================================
+{{- if and $state.observed.cnpg.ready $state.observed.atlasOperator.ready }}
+---
+apiVersion: protection.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  name: {{ $state.name }}-delete-atlas-operator-before-cnpg
+  annotations:
+    {{ setResourceNameAnnotation "usage-cnpg-atlas" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  replayDeletion: true
+  of:
+    apiVersion: helm.m.crossplane.io/v1beta1
+    kind: Release
+    resourceRef:
+      name: {{ $cnpg.name }}
+  by:
+    apiVersion: helm.m.crossplane.io/v1beta1
+    kind: Release
+    resourceRef:
+      name: {{ $state.atlasOperator.name }}
+{{- end }}

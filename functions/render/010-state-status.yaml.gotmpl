@@ -10,7 +10,7 @@
 # ==============================================================================
 
 {{- $checkReady := dict }}
-{{- range $key := list "stackgres-operator" "atlas-operator" "nodepool-psql" }}
+{{- range $key := list "cnpg-operator" "cnpg-scale-to-zero" "atlas-operator" "nodepool-psql" }}
   {{- $entry := get $observed $key | default dict }}
   {{- $resource := $entry.resource | default dict }}
   {{- $status := $resource.status | default dict }}
@@ -27,7 +27,8 @@
 # Set observed state
 # ==============================================================================
 {{- $state = set $state "observed" (dict
-  "stackgresOperator" (dict "ready" (get $checkReady "stackgres-operator"))
+  "cnpg" (dict "ready" (get $checkReady "cnpg-operator"))
+  "scaleToZeroPlugin" (dict "ready" (get $checkReady "cnpg-scale-to-zero"))
   "atlasOperator" (dict "ready" (get $checkReady "atlas-operator"))
   "nodepoolPsql" (dict "ready" (get $checkReady "nodepool-psql"))
 ) }}

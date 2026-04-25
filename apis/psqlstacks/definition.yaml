@@ -204,6 +204,22 @@ spec:
                   image:
                     description: Container image for the prep init container. Must have apk (or be pre-baked with lvm2 + util-linux). Defaults to alpine:3.20 (apk-installs lvm2 at startup).
                     type: string
+              ha:
+                description: "Stack-wide HA mode. When enabled, sets replicaCount + topology spread (one replica per zone) on all platform components: CNPG operator, Atlas operator, scale-to-zero plugin, Mayastor control plane. Per-component values can still be overridden via each component's values block."
+                type: object
+                properties:
+                  enabled:
+                    description: Master toggle. Default false. Flip true for production.
+                    type: boolean
+                    default: false
+                  replicas:
+                    description: Replica count for HA-able platform components. Defaults to 3.
+                    type: integer
+                    default: 3
+                  topologySpreadByZone:
+                    description: Add a topologySpreadConstraint with topologyKey topology.kubernetes.io/zone, maxSkew 1, whenUnsatisfiable ScheduleAnyway. Defaults to true.
+                    type: boolean
+                    default: true
               cnpg:
                 description: Configuration for the CloudNativePG operator Helm release.
                 type: object

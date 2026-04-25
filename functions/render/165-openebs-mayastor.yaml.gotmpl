@@ -44,6 +44,17 @@ spec:
         "tolerations" $state.nodePool.tolerations
       ) }}
     {{- end }}
+    {{- if $state.ha.enabled }}
+      {{- /* Mayastor's chart has many deployments. Hit the most-impactful
+             ones (agents.core, csi.controller, etcd, eventing, obs, operators.pool)
+             with replica counts. Per-component overrides are still possible
+             via spec.storage.values. */}}
+      {{- $haReplicas := $state.ha.replicas }}
+      {{- $_ := set $chartDefaults "agents" (dict "core" (dict "replicaCount" $haReplicas)) }}
+      {{- $_ := set $chartDefaults "csi" (dict "controller" (dict "replicaCount" $haReplicas)) }}
+      {{- $_ := set $chartDefaults "etcd" (dict "replicaCount" $haReplicas) }}
+      {{- /* Fields not commonly there but harmless if ignored */}}
+    {{- end }}
     {{- $mergedValues := mergeOverwrite $chartDefaults ($storage.values | default dict) }}
     values:
       {{- toYaml $mergedValues | nindent 6 }}

@@ -22,6 +22,10 @@ spec:
   storage:
     replicationFactor: 3
     thin: true
+  ha:
+    enabled: true                # 3 replicas + topology spread by zone on
+    replicas: 3                  # all platform components (CNPG, Atlas,
+    topologySpreadByZone: true   # S2Z plugin, Mayastor control plane)
   scaleToZeroPlugin:
     enabled: true
   atlasOperator:

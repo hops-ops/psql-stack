@@ -377,6 +377,41 @@ _items = [
     }
 
     # ==========================================================================
+    # Test 11: ha.enabled=true sets replicaCount + topology spread on CNPG and
+    # Atlas Helm releases, and on the directly-composed S2Z Deployment.
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "ha-enabled-injects-replica-count-and-spread"
+        spec = {
+            compositionPath = "apis/psqlstacks/composition.yaml"
+            xrdPath = "apis/psqlstacks/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLStack {
+                metadata.name = "ha-on"
+                spec = {
+                    clusterName = "prod"
+                    ha = {enabled = True, replicas = 3}
+                }
+            }
+            assertResources = [
+                {
+                    apiVersion = "helm.m.crossplane.io/v1beta1"
+                    kind = "Release"
+                    metadata.name = "cloudnative-pg"
+                    spec.forProvider.values.replicaCount = 3
+                }
+                {
+                    apiVersion = "helm.m.crossplane.io/v1beta1"
+                    kind = "Release"
+                    metadata.name = "atlas-operator"
+                    spec.forProvider.values.replicaCount = 3
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
     # Test 10: spec.storage settings flow through to the StorageClass
     # parameters (replicationFactor, thin)
     # ==========================================================================

@@ -39,6 +39,17 @@ spec:
       {{- $_ := set $chartDefaults "nodeSelector" $state.nodePool.nodeSelector }}
       {{- $_ := set $chartDefaults "tolerations" $state.nodePool.tolerations }}
     {{- end }}
+    {{- if $state.ha.enabled }}
+      {{- $_ := set $chartDefaults "replicaCount" $state.ha.replicas }}
+      {{- if $state.ha.topologySpreadByZone }}
+        {{- $_ := set $chartDefaults "topologySpreadConstraints" (list (dict
+          "maxSkew" 1
+          "topologyKey" "topology.kubernetes.io/zone"
+          "whenUnsatisfiable" "ScheduleAnyway"
+          "labelSelector" (dict "matchLabels" (dict "app.kubernetes.io/name" "cloudnative-pg"))
+        )) }}
+      {{- end }}
+    {{- end }}
     {{- $mergedValues := mergeOverwrite $chartDefaults ($cnpg.values | default dict) }}
     values:
       {{- toYaml $mergedValues | nindent 6 }}

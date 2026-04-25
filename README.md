@@ -26,6 +26,7 @@ This is the **platform layer** — it does not create any serving Postgres clust
 | **CNPG operator** | always-on | The CNCF Postgres operator. CRDs include `Cluster`, `Backup`, `Pooler`, `ScheduledBackup`. |
 | **cnpg-i-scale-to-zero plugin** | on (`spec.scaleToZeroPlugin.enabled: true`) | Auto-hibernates idle CNPG `Cluster`s. Pinnable via `spec.scaleToZeroPlugin.version`. **Requires cert-manager** (provided by [`aws-cert-stack`](../../aws/cert/)). |
 | **Atlas operator** | always-on | Declarative schema migrations via `AtlasMigration` / `AtlasSchema` CRDs. |
+| **HA mode** | off (`spec.ha.enabled: false`) | When enabled: 3 replicas of every HA-able platform component + `topologySpreadConstraints` by zone. Affects CNPG operator, Atlas, S2Z plugin, Mayastor control plane. |
 | **Karpenter NodePools** | on (`spec.nodePool.enabled: true`) | `branches` (spot arm64 NVMe) and `primary` (on-demand arm64 NVMe). |
 | **OpenEBS Mayastor** | on when `nodePool.enabled` | Replicated NVMe-oF storage with CoW snapshots. Single `psql` StorageClass + matching VolumeSnapshotClass. |
 | **node-prep DaemonSet** | on when `nodePool.enabled` | Configures hugepages + loads `nvme-tcp` kernel module on each NVMe node (Mayastor prereqs). |
@@ -124,6 +125,10 @@ spec:
 | `atlasOperator.namespace` | string | shared `namespace` | Override |
 | `atlasOperator.values` | object | — | Helm values merged with chart defaults |
 | `atlasOperator.overrideAllValues` | object | — | Helm values that replace all defaults |
+| **HA mode** | | | |
+| `ha.enabled` | bool | `false` | Stack-wide HA toggle. When true, sets replicaCount + topology spread by zone on CNPG, Atlas, S2Z plugin, Mayastor control plane components. |
+| `ha.replicas` | int | `3` | Replica count for HA-able platform components |
+| `ha.topologySpreadByZone` | bool | `true` | Add topologySpreadConstraint with topologyKey=topology.kubernetes.io/zone, maxSkew=1, whenUnsatisfiable=ScheduleAnyway |
 | **NodePool** | | | |
 | `nodePool.enabled` | bool | `true` | Master toggle. When false, Mayastor + StorageClass + node-prep are skipped too. |
 | `nodePool.nodeClassName` | string | `default` | EKS NodeClass referenced by both sub-pools |

@@ -144,6 +144,27 @@
 }}
 
 # ==============================================================================
+# HA mode — stack-wide HA defaults injected into each platform component's
+# Helm values (or our directly-composed Deployment specs) when enabled.
+# Per-component overrides can still win via the component's values block.
+# ==============================================================================
+{{- $haSpec := $spec.ha | default dict }}
+{{- $haEnabled := false }}
+{{- if hasKey $haSpec "enabled" }}
+  {{- $haEnabled = $haSpec.enabled }}
+{{- end }}
+{{- $haReplicas := $haSpec.replicas | default 3 }}
+{{- $haSpreadByZone := true }}
+{{- if hasKey $haSpec "topologySpreadByZone" }}
+  {{- $haSpreadByZone = $haSpec.topologySpreadByZone }}
+{{- end }}
+{{- $ha := dict
+  "enabled" $haEnabled
+  "replicas" $haReplicas
+  "topologySpreadByZone" $haSpreadByZone
+}}
+
+# ==============================================================================
 # Per-component configuration
 # ==============================================================================
 {{- $cnpg := $spec.cnpg | default dict }}
@@ -186,6 +207,7 @@
     )
   )
   "nodePrep" $nodePrep
+  "ha" $ha
   "cnpg" (dict
     "name" ($cnpg.name | default "cloudnative-pg")
     "namespace" ($cnpg.namespace | default $namespace)

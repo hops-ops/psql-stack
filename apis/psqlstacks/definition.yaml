@@ -157,7 +157,7 @@ spec:
                                 type: string
                           required: [key, operator]
                   primary:
-                    description: On-demand arm64 NVMe sub-pool for replicated-cow PSQLCluster primaries. Spot preemption would lose a Mayastor replica, so on-demand is the right default for serving workloads.
+                    description: "Spot arm64 NVMe sub-pool for PSQLCluster primaries. Mayastor's replicationFactor=3 absorbs spot preemption — losing one replica triggers a rebuild on a fresh node, not data loss. Override capacity-type to on-demand via spec.nodePool.primary.requirements if your durability requirements rule out preemption."
                     type: object
                     properties:
                       enabled:
@@ -171,7 +171,7 @@ spec:
                           memory:
                             type: string
                       requirements:
-                        description: Karpenter scheduling requirements. Defaults to arm64 on-demand on i4g.2xlarge / i4g.4xlarge / im4gn.2xlarge (NVMe instance-store, Graviton).
+                        description: Karpenter scheduling requirements. Defaults to arm64 spot on i4g.2xlarge / i4g.4xlarge / im4gn.2xlarge (NVMe instance-store, Graviton). Set capacity-type to on-demand if Mayastor replication isn't enough for your durability bar.
                         type: array
                         items:
                           type: object

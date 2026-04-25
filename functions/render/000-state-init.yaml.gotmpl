@@ -100,7 +100,8 @@
   (dict "key" "node.kubernetes.io/instance-type" "operator" "In" "values" $nvmeInstanceTypes)
 ) }}
 
-# primary sub-pool (on-demand)
+# primary sub-pool (spot by default — Mayastor's replication absorbs preemption;
+# losing one replica of three triggers a rebuild on a fresh node, not data loss)
 {{- $primarySpec := $nodePoolSpec.primary | default dict }}
 {{- $primaryEnabled := true }}
 {{- if hasKey $primarySpec "enabled" }}
@@ -109,7 +110,7 @@
 {{- $primaryLimits := $primarySpec.limits | default (dict "cpu" "32" "memory" "128Gi") }}
 {{- $primaryRequirements := $primarySpec.requirements | default (list
   (dict "key" "kubernetes.io/arch" "operator" "In" "values" (list "arm64"))
-  (dict "key" "karpenter.sh/capacity-type" "operator" "In" "values" (list "on-demand"))
+  (dict "key" "karpenter.sh/capacity-type" "operator" "In" "values" (list "spot"))
   (dict "key" "node.kubernetes.io/instance-type" "operator" "In" "values" $nvmeInstanceTypes)
 ) }}
 
@@ -173,13 +174,13 @@
     "tolerations" $nodePoolTolerations
     "branches" (dict
       "enabled" $branchesEnabled
-      "name" (printf "%s-psql-branches" $clusterName)
+      "name" (printf "%s-branches" $name)
       "limits" $branchesLimits
       "requirements" $branchesRequirements
     )
     "primary" (dict
       "enabled" $primaryEnabled
-      "name" (printf "%s-psql-primary" $clusterName)
+      "name" (printf "%s-primary" $name)
       "limits" $primaryLimits
       "requirements" $primaryRequirements
     )

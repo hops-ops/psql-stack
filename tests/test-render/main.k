@@ -1,6 +1,5 @@
 import models.ai.com.ops.hops.v1alpha1 as stacksv1alpha1
 import models.io.upbound.dev.meta.v1alpha1 as metav1alpha1
-import models.k8s.apimachinery.pkg.apis.meta.v1 as metav1
 
 # ==============================================================================
 # Unit tests for PSQLStack XRD
@@ -13,8 +12,8 @@ import models.k8s.apimachinery.pkg.apis.meta.v1 as metav1
 _items = [
     # ==========================================================================
     # Test 1: minimal claim renders the platform operators (CNPG, Atlas), the
-    # scale-to-zero plugin (default-on), Longhorn + StorageClass + node-prep +
-    # both NodePool sub-pools (nodePool default-on now — stack's whole point).
+    # scale-to-zero plugin (default-on), and the VolumeSnapshotClass
+    # (default driver: ebs.csi.aws.com, default name: "psql").
     # ==========================================================================
     metav1alpha1.CompositionTest {
         metadata.name = "minimal-renders-platform-stack"
@@ -39,39 +38,14 @@ _items = [
                     metadata.name = "atlas-operator"
                 }
                 {
-                    apiVersion = "helm.m.crossplane.io/v1beta1"
-                    kind = "Release"
-                    metadata.name = "longhorn"
-                }
-                {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                     kind = "Object"
-                    metadata.name = "test-psql-storageclass-longhorn"
-                }
-                {
-                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
-                    kind = "Object"
-                    metadata.name = "test-psql-volumesnapshotclass-longhorn"
+                    metadata.name = "test-psql-volumesnapshotclass"
                 }
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                     kind = "Object"
                     metadata.name = "test-psql-s2z-deployment"
-                }
-                {
-                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
-                    kind = "Object"
-                    metadata.name = "test-psql-nodepool-branches"
-                }
-                {
-                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
-                    kind = "Object"
-                    metadata.name = "test-psql-nodepool-primary"
-                }
-                {
-                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
-                    kind = "Object"
-                    metadata.name = "test-psql-node-prep"
                 }
             ]
         }
@@ -321,11 +295,8 @@ _items = [
                     scaleToZeroPlugin = {enabled = False}
                 }
             }
-            # When disabled, no s2z-* Objects are composed. We assert the
-            # expected platform Releases are still present and ebs StorageClass
-            # is created — the assertion is a positive presence check; the
-            # absence of s2z-* resources is implicit (composition gates them
-            # on enabled=true).
+            # Positive presence: cnpg + atlas + VSC still composed.
+            # Absence of s2z-* resources is implicit (composition gates them).
             assertResources = [
                 {
                     apiVersion = "helm.m.crossplane.io/v1beta1"
@@ -335,53 +306,17 @@ _items = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                     kind = "Object"
-                    metadata.name = "no-s2z-storageclass-longhorn"
+                    metadata.name = "no-s2z-volumesnapshotclass"
                 }
             ]
         }
     }
 
     # ==========================================================================
-    # Test 9: nodePool.enabled=false skips Longhorn, StorageClass, and node-prep
-    # (the stack's storage requires the NodePool to have something to schedule
-    # on — disabling the NodePool reasonably skips everything that needs it).
+    # Test 9: ha.enabled=true sets replicaCount on CNPG and Atlas Helm releases.
     # ==========================================================================
     metav1alpha1.CompositionTest {
-        metadata.name = "nodepool-disabled-skips-storage"
-        spec = {
-            compositionPath = "apis/psqlstacks/composition.yaml"
-            xrdPath = "apis/psqlstacks/definition.yaml"
-            timeoutSeconds = 60
-            validate = False
-            xr = stacksv1alpha1.PSQLStack {
-                metadata.name = "np-off"
-                spec = {
-                    clusterName = "my-cluster"
-                    nodePool = {enabled = False}
-                }
-            }
-            # Positive presence: cnpg + atlas still composed
-            assertResources = [
-                {
-                    apiVersion = "helm.m.crossplane.io/v1beta1"
-                    kind = "Release"
-                    metadata.name = "cloudnative-pg"
-                }
-                {
-                    apiVersion = "helm.m.crossplane.io/v1beta1"
-                    kind = "Release"
-                    metadata.name = "atlas-operator"
-                }
-            ]
-        }
-    }
-
-    # ==========================================================================
-    # Test 11: ha.enabled=true sets replicaCount + topology spread on CNPG and
-    # Atlas Helm releases, and on the directly-composed S2Z Deployment.
-    # ==========================================================================
-    metav1alpha1.CompositionTest {
-        metadata.name = "ha-enabled-injects-replica-count-and-spread"
+        metadata.name = "ha-enabled-injects-replica-count"
         spec = {
             compositionPath = "apis/psqlstacks/composition.yaml"
             xrdPath = "apis/psqlstacks/definition.yaml"
@@ -412,22 +347,23 @@ _items = [
     }
 
     # ==========================================================================
-    # Test 10: spec.storage.replicationFactor flows through to the Longhorn
-    # StorageClass parameters (numberOfReplicas).
+    # Test 10: spec.snapshotClass settings flow through to the composed VSC.
+    # Default driver = ebs.csi.aws.com; override to verify it propagates.
     # ==========================================================================
     metav1alpha1.CompositionTest {
-        metadata.name = "storage-settings-flow-through-to-sc"
+        metadata.name = "snapshotclass-driver-flows-through"
         spec = {
             compositionPath = "apis/psqlstacks/composition.yaml"
             xrdPath = "apis/psqlstacks/definition.yaml"
             timeoutSeconds = 60
             validate = False
             xr = stacksv1alpha1.PSQLStack {
-                metadata.name = "storage-tweaks"
+                metadata.name = "vsc-tweaks"
                 spec = {
                     clusterName = "my-cluster"
-                    storage = {
-                        replicationFactor = 1
+                    snapshotClass = {
+                        driver = "driver.longhorn.io"
+                        deletionPolicy = "Retain"
                     }
                 }
             }
@@ -435,14 +371,53 @@ _items = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                     kind = "Object"
-                    metadata.name = "storage-tweaks-storageclass-longhorn"
-                    spec.forProvider.manifest.parameters = {
-                        dataEngine = "v2"
-                        numberOfReplicas = "1"
-                        staleReplicaTimeout = "30"
-                        fsType = "ext4"
-                        diskSelector = "psql"
+                    metadata.name = "vsc-tweaks-volumesnapshotclass"
+                    spec.forProvider.manifest = {
+                        apiVersion = "snapshot.storage.k8s.io/v1"
+                        kind = "VolumeSnapshotClass"
+                        metadata = {
+                            name = "psql"
+                            labels = {
+                                "hops.ops.com.ai/managed" = "true"
+                                "hops.ops.com.ai/psql" = "vsc-tweaks"
+                            }
+                        }
+                        driver = "driver.longhorn.io"
+                        deletionPolicy = "Retain"
                     }
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
+    # Test 11: snapshotClass.enabled=false suppresses the VSC composition.
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "snapshotclass-can-be-disabled"
+        spec = {
+            compositionPath = "apis/psqlstacks/composition.yaml"
+            xrdPath = "apis/psqlstacks/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLStack {
+                metadata.name = "no-vsc"
+                spec = {
+                    clusterName = "my-cluster"
+                    snapshotClass = {enabled = False}
+                }
+            }
+            # Cnpg + atlas still composed. No vsc-* Object expected (implicit).
+            assertResources = [
+                {
+                    apiVersion = "helm.m.crossplane.io/v1beta1"
+                    kind = "Release"
+                    metadata.name = "cloudnative-pg"
+                }
+                {
+                    apiVersion = "helm.m.crossplane.io/v1beta1"
+                    kind = "Release"
+                    metadata.name = "atlas-operator"
                 }
             ]
         }

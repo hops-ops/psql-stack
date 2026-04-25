@@ -2,18 +2,13 @@
 #
 # Composes:
 #   - CloudNativePG operator (Helm)
-#   - cnpg-i-scale-to-zero plugin (set of Objects)
+#   - cnpg-i-scale-to-zero plugin (set of Objects, requires cert-manager)
 #   - Atlas operator (Helm)
-#   - Karpenter NodePool sub-pools: branches (spot) + primary (spot)
-#   - Longhorn V2 (Helm) on the primary sub-pool nodes
-#   - psql StorageClass + VolumeSnapshotClass (Longhorn-backed, replicated, CoW)
-#   - node-prep DaemonSet (hugepages + nvme_tcp / vfio_pci / uio_pci_generic
-#     / ublk_drv on each NVMe node, plus Longhorn disk auto-registration)
+#   - VolumeSnapshotClass `psql` (driver: ebs.csi.aws.com)
 #
-# This is the stack's whole point: CoW Postgres on dedicated NVMe nodes.
-# To opt out of NVMe / Longhorn entirely (and just get CNPG + Atlas + S2Z
-# on the cluster's existing default StorageClass), set nodePool.enabled: false
-# and have your PSQLClusters target a different SC.
+# PSQLClusters target the cluster's existing default StorageClass
+# (gp3 on EKS Auto Mode, standard on kind/k3d, etc.). PSQLBranch
+# references the `psql` VolumeSnapshotClass for forking primaries.
 #
 apiVersion: hops.ops.com.ai/v1alpha1
 kind: PSQLStack

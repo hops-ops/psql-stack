@@ -37,122 +37,8 @@
 }}
 
 # ==============================================================================
-# Storage — Longhorn V2 (replicated SPDK + NVMe-oF + CoW)
-# Single backend; per-PVC cost is controlled via replicationFactor. Requires
-# NVMe instance-store nodes (NodePool block) plus hugepages + nvme_tcp /
-# vfio_pci / uio_pci_generic / ublk_drv modules (node-prep DaemonSet).
-# Longhorn V2 is Experimental upstream as of Longhorn 1.10.
-# PSQLClusters that don't want CoW can target any other StorageClass that
-# exists on the cluster (e.g., the default gp3 SC) — the stack doesn't
-# compose a non-CoW SC itself.
-# ==============================================================================
-{{- $storageSpec := $spec.storage | default dict }}
-{{- $thin := true }}
-{{- if hasKey $storageSpec "thin" }}
-  {{- $thin = $storageSpec.thin }}
-{{- end }}
-{{- $allowVolumeExpansion := true }}
-{{- if hasKey $storageSpec "allowVolumeExpansion" }}
-  {{- $allowVolumeExpansion = $storageSpec.allowVolumeExpansion }}
-{{- end }}
-{{- $storage := dict
-  "chartVersion" ($storageSpec.chartVersion | default "1.10.0")
-  "namespace" ($storageSpec.namespace | default "longhorn-system")
-  "storageClassName" ($storageSpec.storageClassName | default "psql")
-  "replicationFactor" ($storageSpec.replicationFactor | default 3)
-  "thin" $thin
-  "reclaimPolicy" ($storageSpec.reclaimPolicy | default "Delete")
-  "volumeBindingMode" ($storageSpec.volumeBindingMode | default "WaitForFirstConsumer")
-  "allowVolumeExpansion" $allowVolumeExpansion
-  "values" ($storageSpec.values | default dict)
-  "overrideAllValues" ($storageSpec.overrideAllValues | default dict)
-}}
-
-# ==============================================================================
-# NodePool — branches + primary sub-pools (NVMe arm64 Graviton)
-# Defaults to enabled=false; existing claims unchanged. When enabled, both
-# sub-pools materialize unless individually disabled.
-#
-# Common scheduling: nodeSelector workload-type=psql, taint psql=true:NoSchedule.
-# Each pool adds a sub-label (sub-pool=branches | sub-pool=primary) and matching
-# taint (sub-pool=branches:NoSchedule | sub-pool=primary:NoSchedule) so workloads
-# can target one pool specifically.
-# ==============================================================================
-{{- $nodePoolSpec := $spec.nodePool | default dict }}
-{{- $nodePoolEnabled := true }}
-{{- if hasKey $nodePoolSpec "enabled" }}
-  {{- $nodePoolEnabled = $nodePoolSpec.enabled }}
-{{- end }}
-{{- $nodePoolNodeClassName := $nodePoolSpec.nodeClassName | default "default" }}
-{{- $nodePoolDisruption := $nodePoolSpec.disruption | default (dict "consolidationPolicy" "WhenEmptyOrUnderutilized" "consolidateAfter" "60s") }}
-
-# Default NVMe arm64 instance types
-{{- $nvmeInstanceTypes := list "i4g.2xlarge" "i4g.4xlarge" "im4gn.2xlarge" }}
-
-# branches sub-pool (spot)
-{{- $branchesSpec := $nodePoolSpec.branches | default dict }}
-{{- $branchesEnabled := true }}
-{{- if hasKey $branchesSpec "enabled" }}
-  {{- $branchesEnabled = $branchesSpec.enabled }}
-{{- end }}
-{{- $branchesLimits := $branchesSpec.limits | default (dict "cpu" "32" "memory" "128Gi") }}
-{{- $branchesRequirements := $branchesSpec.requirements | default (list
-  (dict "key" "kubernetes.io/arch" "operator" "In" "values" (list "arm64"))
-  (dict "key" "karpenter.sh/capacity-type" "operator" "In" "values" (list "spot"))
-  (dict "key" "node.kubernetes.io/instance-type" "operator" "In" "values" $nvmeInstanceTypes)
-) }}
-
-# primary sub-pool (spot by default — Longhorn V2's replication absorbs
-# preemption; losing one replica of three triggers a rebuild on a fresh
-# node, not data loss)
-{{- $primarySpec := $nodePoolSpec.primary | default dict }}
-{{- $primaryEnabled := true }}
-{{- if hasKey $primarySpec "enabled" }}
-  {{- $primaryEnabled = $primarySpec.enabled }}
-{{- end }}
-{{- $primaryLimits := $primarySpec.limits | default (dict "cpu" "32" "memory" "128Gi") }}
-{{- $primaryRequirements := $primarySpec.requirements | default (list
-  (dict "key" "kubernetes.io/arch" "operator" "In" "values" (list "arm64"))
-  (dict "key" "karpenter.sh/capacity-type" "operator" "In" "values" (list "spot"))
-  (dict "key" "node.kubernetes.io/instance-type" "operator" "In" "values" $nvmeInstanceTypes)
-) }}
-
-# Operator scheduling — operators (CNPG, Atlas, scale-to-zero) ride the primary
-# pool when enabled (more reliable than spot for control-plane components)
-{{- $nodePoolNodeSelector := dict }}
-{{- $nodePoolTolerations := list }}
-{{- if and $nodePoolEnabled $primaryEnabled }}
-  {{- $nodePoolNodeSelector = dict "workload-type" "psql" "sub-pool" "primary" }}
-  {{- $nodePoolTolerations = list
-    (dict "key" "psql" "value" "true" "effect" "NoSchedule")
-    (dict "key" "sub-pool" "value" "primary" "effect" "NoSchedule")
-  }}
-{{- end }}
-
-# ==============================================================================
-# Node prep — hugepages + nvme_tcp / vfio_pci / uio_pci_generic / ublk_drv
-# kernel modules on NVMe nodes (Longhorn V2 prereqs); also annotates the
-# K8s Node with node.longhorn.io/default-disks-config so Longhorn registers
-# the local NVMe instance-store device as a V2 block-mode disk.
-# Auto-gated: emitted when nodePool.enabled (no nodes → DS no-op anyway)
-# ==============================================================================
-{{- $nodePrepSpec := $spec.nodePrep | default dict }}
-{{- $nodePrepEnabled := true }}
-{{- if hasKey $nodePrepSpec "enabled" }}
-  {{- $nodePrepEnabled = $nodePrepSpec.enabled }}
-{{- end }}
-{{- $nodePrep := dict
-  "enabled" (and $nodePrepEnabled $nodePoolEnabled)
-  "hugepages" (dict
-    "count" (((($nodePrepSpec.hugepages | default dict)).count) | default 1024)
-  )
-  "image" ($nodePrepSpec.image | default "alpine:3.20")
-}}
-
-# ==============================================================================
-# HA mode — stack-wide HA defaults injected into each platform component's
-# Helm values (or our directly-composed Deployment specs) when enabled.
-# Per-component overrides can still win via the component's values block.
+# HA mode — stack-wide replica + topology-spread defaults injected into each
+# platform component. Per-component values blocks can still override.
 # ==============================================================================
 {{- $haSpec := $spec.ha | default dict }}
 {{- $haEnabled := false }}
@@ -182,6 +68,25 @@
 {{- $atlas := $spec.atlasOperator | default dict }}
 
 # ==============================================================================
+# VolumeSnapshotClass — the stack's only storage-layer composition.
+# PSQLBranch targets this VSC by name when forking primaries. Default driver
+# is ebs.csi.aws.com (correct for EKS Auto Mode); override for other CSI
+# providers via $spec.snapshotClass.driver.
+# ==============================================================================
+{{- $snapshotSpec := $spec.snapshotClass | default dict }}
+{{- $snapshotEnabled := true }}
+{{- if hasKey $snapshotSpec "enabled" }}
+  {{- $snapshotEnabled = $snapshotSpec.enabled }}
+{{- end }}
+{{- $snapshotClass := dict
+  "enabled" $snapshotEnabled
+  "name" ($snapshotSpec.name | default "psql")
+  "driver" ($snapshotSpec.driver | default "ebs.csi.aws.com")
+  "deletionPolicy" ($snapshotSpec.deletionPolicy | default "Delete")
+  "parameters" ($snapshotSpec.parameters | default dict)
+}}
+
+# ==============================================================================
 # Initialize $state
 # ==============================================================================
 {{- $state := dict
@@ -192,27 +97,6 @@
   "labels" $labels
   "helmProviderConfigRef" $helmProviderConfigRef
   "kubernetesProviderConfigRef" $k8sProviderConfigRef
-  "storage" $storage
-  "nodePool" (dict
-    "enabled" $nodePoolEnabled
-    "nodeClassName" $nodePoolNodeClassName
-    "disruption" $nodePoolDisruption
-    "nodeSelector" $nodePoolNodeSelector
-    "tolerations" $nodePoolTolerations
-    "branches" (dict
-      "enabled" $branchesEnabled
-      "name" (printf "%s-branches" $name)
-      "limits" $branchesLimits
-      "requirements" $branchesRequirements
-    )
-    "primary" (dict
-      "enabled" $primaryEnabled
-      "name" (printf "%s-primary" $name)
-      "limits" $primaryLimits
-      "requirements" $primaryRequirements
-    )
-  )
-  "nodePrep" $nodePrep
   "ha" $ha
   "cnpg" (dict
     "name" ($cnpg.name | default "cloudnative-pg")
@@ -232,6 +116,7 @@
     "values" ($atlas.values | default dict)
     "overrideAllValues" ($atlas.overrideAllValues | default dict)
   )
+  "snapshotClass" $snapshotClass
   "observed" (dict)
   "status" (dict)
 }}

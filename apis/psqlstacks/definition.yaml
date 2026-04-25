@@ -14,7 +14,16 @@ spec:
     served: true
     schema:
       openAPIV3Schema:
-        description: PSQLStack deploys CloudNativePG, the cnpg-i-scale-to-zero plugin, and the Atlas Operator. It's the platform layer — per-app serving clusters live in PSQLCluster; ephemeral forks live in PSQLBranch.
+        description: |
+          PSQLStack is the platform layer for Postgres-on-Kubernetes. It composes
+          CloudNativePG (the operator), the cnpg-i-scale-to-zero plugin, the Atlas
+          Operator (declarative schema migrations), and a VolumeSnapshotClass that
+          PSQLBranch uses as a stable target for forking primaries.
+
+          The stack is intentionally OS-agnostic and storage-agnostic — it relies
+          on whatever CSI driver and StorageClass the target cluster already
+          provides (e.g., gp3 on EKS Auto Mode, standard on kind/k3d). Per-app
+          serving clusters live in PSQLCluster; ephemeral forks in PSQLBranch.
         type: object
         properties:
           spec:
@@ -22,206 +31,65 @@ spec:
             type: object
             properties:
               clusterName:
-                description: Name of the target cluster. Used as default for helmProviderConfigRef.name and resource naming.
+                description: Name of the target cluster. Used as the default for helmProviderConfigRef.name, kubernetesProviderConfigRef.name, and label values.
                 type: string
+              namespace:
+                description: Shared namespace for the CNPG operator, scale-to-zero plugin, and Atlas operator. Per-component namespace overrides take precedence. Defaults to cnpg-system.
+                type: string
+              labels:
+                description: Custom labels merged with the stack's default labels and applied to every composed resource.
+                type: object
+                additionalProperties:
+                  type: string
+                x-kubernetes-preserve-unknown-fields: true
               managementPolicies:
-                description: Management policies for all composed resources. Defaults to ["*"].
+                description: Crossplane managementPolicies applied to every composed resource. Defaults to ["*"].
                 type: array
                 items:
                   type: string
                 default:
                 - "*"
-              labels:
-                description: Custom labels applied to all managed resources.
-                type: object
-                additionalProperties:
-                  type: string
-                x-kubernetes-preserve-unknown-fields: true
               helmProviderConfigRef:
-                description: Reference to the Helm ProviderConfig. Defaults to clusterName.
+                description: Reference to the Helm ProviderConfig used for CNPG and Atlas releases. Defaults to clusterName.
                 type: object
                 properties:
                   name:
-                    description: Name of the Helm ProviderConfig.
                     type: string
                   kind:
-                    description: Kind of the ProviderConfig. Defaults to ProviderConfig.
                     type: string
                     enum:
                     - ProviderConfig
                     - ClusterProviderConfig
               kubernetesProviderConfigRef:
-                description: Reference to the Kubernetes ProviderConfig (used to create the Karpenter NodePool Object and to apply the scale-to-zero plugin manifest). Defaults to clusterName.
+                description: Reference to the Kubernetes ProviderConfig used for the scale-to-zero plugin manifests and the VolumeSnapshotClass. Defaults to clusterName.
                 type: object
                 properties:
                   name:
-                    description: Name of the Kubernetes ProviderConfig.
                     type: string
                   kind:
-                    description: Kind of the ProviderConfig. Defaults to ProviderConfig.
                     type: string
                     enum:
                     - ProviderConfig
                     - ClusterProviderConfig
-              namespace:
-                description: Shared namespace for CNPG operator, scale-to-zero plugin, and Atlas operator. Defaults to cnpg-system. Per-component namespace overrides this.
-                type: string
-              storage:
-                description: "Storage backend (Longhorn V2 — SPDK + NVMe-oF with replicated CoW snapshots). The stack is opinionated: it ships exactly one storage backend, sized for CoW + HA. Per-cluster cost is controlled via replicationFactor (3 for primaries, 1 for ephemeral branches). Requires NVMe instance-store nodes (provided by the NodePool block) plus hugepages and the nvme_tcp / vfio_pci / uio_pci_generic / ublk_drv kernel modules (provided by the node-prep DaemonSet). Longhorn V2 is marked Experimental upstream (Longhorn 1.10) — track promotion to GA before high-stakes production use. For non-CoW workloads, PSQLCluster claims can target any other StorageClass that exists on the target cluster (e.g., the cluster's default gp3 SC) — no need for the stack to compose that."
-                type: object
-                properties:
-                  chartVersion:
-                    description: Longhorn Helm chart version. Defaults to 1.10.0.
-                    type: string
-                  namespace:
-                    description: Namespace for the Longhorn install. Defaults to longhorn-system.
-                    type: string
-                  storageClassName:
-                    description: StorageClass name. Defaults to "psql".
-                    type: string
-                  replicationFactor:
-                    description: Default replication factor. Defaults to 3 (quorum-safe HA). Per-PVC override via the StorageClass parameters.
-                    type: integer
-                    default: 3
-                  thin:
-                    description: Thin-provision volumes (CoW). Defaults to true.
-                    type: boolean
-                    default: true
-                  reclaimPolicy:
-                    type: string
-                    enum: [Delete, Retain]
-                    default: Delete
-                  volumeBindingMode:
-                    type: string
-                    enum: [Immediate, WaitForFirstConsumer]
-                    default: WaitForFirstConsumer
-                  allowVolumeExpansion:
-                    type: boolean
-                    default: true
-                  values:
-                    type: object
-                    x-kubernetes-preserve-unknown-fields: true
-                  overrideAllValues:
-                    type: object
-                    x-kubernetes-preserve-unknown-fields: true
-              nodePool:
-                description: "Dedicated Karpenter NodePools for PostgreSQL workloads. Two sub-pools — `branches` (spot arm64 NVMe, for ephemeral PSQLBranch workloads) and `primary` (spot arm64 NVMe, for replicated-CoW PSQLCluster primaries — Longhorn V2 replication absorbs spot preemption). Defaults to enabled — node-side prep for Longhorn V2 (hugepages + nvme_tcp / vfio_pci / uio_pci_generic / ublk_drv) is composed automatically by the node-prep DaemonSet. CNPG / scale-to-zero / Atlas schedule on the primary pool when enabled."
-                type: object
-                properties:
-                  enabled:
-                    description: Master toggle. When false, neither sub-pool is created and Mayastor / node-prep are skipped (the stack would have nothing to schedule on otherwise). Defaults to true — provisioning NVMe nodes is the stack's whole point.
-                    type: boolean
-                    default: true
-                  nodeClassName:
-                    description: EKS NodeClass shared by both sub-pools. Defaults to "default".
-                    type: string
-                  disruption:
-                    description: Karpenter disruption policy applied to both sub-pools.
-                    type: object
-                    properties:
-                      consolidationPolicy:
-                        type: string
-                        enum: [WhenEmpty, WhenEmptyOrUnderutilized]
-                        default: WhenEmptyOrUnderutilized
-                      consolidateAfter:
-                        type: string
-                        default: "60s"
-                  branches:
-                    description: Spot arm64 NVMe sub-pool for branches and dev workloads. Cost-optimized; spot preemption is acceptable because branches are ephemeral.
-                    type: object
-                    properties:
-                      enabled:
-                        type: boolean
-                        default: true
-                      limits:
-                        type: object
-                        properties:
-                          cpu:
-                            type: string
-                          memory:
-                            type: string
-                      requirements:
-                        description: Karpenter scheduling requirements. Defaults to arm64 spot on i4g.2xlarge / i4g.4xlarge / im4gn.2xlarge (NVMe instance-store, Graviton).
-                        type: array
-                        items:
-                          type: object
-                          properties:
-                            key:
-                              type: string
-                            operator:
-                              type: string
-                              enum: [In, NotIn, Exists, DoesNotExist, Gt, Lt]
-                            values:
-                              type: array
-                              items:
-                                type: string
-                          required: [key, operator]
-                  primary:
-                    description: "Spot arm64 NVMe sub-pool for PSQLCluster primaries. Longhorn V2's replicationFactor=3 absorbs spot preemption — losing one replica triggers a rebuild on a fresh node, not data loss. Override capacity-type to on-demand via spec.nodePool.primary.requirements if your durability requirements rule out preemption."
-                    type: object
-                    properties:
-                      enabled:
-                        type: boolean
-                        default: true
-                      limits:
-                        type: object
-                        properties:
-                          cpu:
-                            type: string
-                          memory:
-                            type: string
-                      requirements:
-                        description: Karpenter scheduling requirements. Defaults to arm64 spot on i4g.2xlarge / i4g.4xlarge / im4gn.2xlarge (NVMe instance-store, Graviton). Set capacity-type to on-demand if Mayastor replication isn't enough for your durability bar.
-                        type: array
-                        items:
-                          type: object
-                          properties:
-                            key:
-                              type: string
-                            operator:
-                              type: string
-                              enum: [In, NotIn, Exists, DoesNotExist, Gt, Lt]
-                            values:
-                              type: array
-                              items:
-                                type: string
-                          required: [key, operator]
-              nodePrep:
-                description: "Node-prep DaemonSet for Longhorn V2 prerequisites. Runs as a privileged init container on each NVMe NodePool node and configures hugepages (vm.nr_hugepages, required by SPDK) plus loads the nvme_tcp / vfio_pci / uio_pci_generic / ublk_drv kernel modules (Longhorn V2 NVMe-oF + UBLK transports). Also annotates the K8s Node with `node.longhorn.io/default-disks-config` so Longhorn auto-registers the local NVMe instance-store device as a V2 block-mode disk. Composed when nodePool.enabled."
-                type: object
-                properties:
-                  enabled:
-                    description: Whether to compose the node-prep DaemonSet. Defaults to true (auto-gated by nodePool.enabled — no NVMe nodes means no prep needed).
-                    type: boolean
-                    default: true
-                  hugepages:
-                    type: object
-                    properties:
-                      count:
-                        description: Number of 2MiB hugepages to allocate on each node. Defaults to 1024 (2GiB total). Required by Longhorn V2 SPDK.
-                        type: integer
-                        default: 1024
-                  image:
-                    description: Container image for the prep init container. Must have apk (for kubectl + util-linux install). Defaults to alpine:3.20.
-                    type: string
               ha:
-                description: "Stack-wide HA mode. When enabled, sets replicaCount + topology spread (one replica per zone) on all platform components: CNPG operator, Atlas operator, scale-to-zero plugin, Longhorn control plane. Per-component values can still be overridden via each component's values block."
+                description: |
+                  Stack-wide HA mode. When enabled, sets replicaCount + topology spread
+                  by zone on every HA-able platform component (CNPG operator, Atlas
+                  operator, scale-to-zero plugin Deployment). Per-component values
+                  blocks can still override.
                 type: object
                 properties:
                   enabled:
-                    description: Master toggle. Default false. Flip true for production.
                     type: boolean
                     default: false
                   replicas:
-                    description: Replica count for HA-able platform components. Defaults to 3.
                     type: integer
                     default: 3
                   topologySpreadByZone:
-                    description: Add a topologySpreadConstraint with topologyKey topology.kubernetes.io/zone, maxSkew 1, whenUnsatisfiable ScheduleAnyway. Defaults to true.
                     type: boolean
                     default: true
               cnpg:
-                description: Configuration for the CloudNativePG operator Helm release.
+                description: CloudNativePG operator Helm release configuration.
                 type: object
                 properties:
                   name:
@@ -234,7 +102,7 @@ spec:
                     description: CNPG Helm chart version. Defaults to 0.27.1 (tracks CNPG 1.29.x).
                     type: string
                   values:
-                    description: Helm values merged with chart defaults.
+                    description: Helm values merged with the stack's chart defaults.
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
                   overrideAllValues:
@@ -242,21 +110,24 @@ spec:
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
               scaleToZeroPlugin:
-                description: "Configuration for the cnpg-i-scale-to-zero plugin (github.com/xataio/cnpg-i-scale-to-zero). Installed via upstream release manifest. Zero cost when no PSQLCluster opts into scale-to-zero."
+                description: |
+                  cnpg-i-scale-to-zero plugin (github.com/xataio/cnpg-i-scale-to-zero).
+                  Installed via the upstream release manifest. Zero cost when no
+                  PSQLCluster opts into scale-to-zero. Requires cert-manager on the
+                  target cluster (provided by aws-cert-stack).
                 type: object
                 properties:
                   enabled:
-                    description: Default true — the plugin is zero-cost when unused and per-cluster opt-in is cheap.
                     type: boolean
                     default: true
                   version:
-                    description: Plugin release tag. The manifest URL pins to this. Defaults to v0.1.7.
+                    description: Plugin release tag. Defaults to v0.1.7.
                     type: string
                   namespace:
-                    description: Namespace override for the plugin install. Defaults to cnpg-system (plugin manifest creates the namespace if missing).
+                    description: Namespace override. Defaults to the shared namespace.
                     type: string
               atlasOperator:
-                description: Configuration for the Atlas Operator component (declarative database schema migrations).
+                description: Atlas Operator Helm release configuration. Manages declarative database schema migrations.
                 type: object
                 properties:
                   name:
@@ -266,12 +137,49 @@ spec:
                     description: Namespace override for this component.
                     type: string
                   values:
-                    description: Helm values merged with chart defaults.
+                    description: Helm values merged with the stack's chart defaults.
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
                   overrideAllValues:
                     description: Helm values that replace all defaults for this component.
                     type: object
+                    x-kubernetes-preserve-unknown-fields: true
+              snapshotClass:
+                description: |
+                  VolumeSnapshotClass used by PSQLBranch as its forking target. The
+                  stack composes exactly one VolumeSnapshotClass named after the XR
+                  (default: "psql"). On EKS Auto Mode the default driver
+                  (ebs.csi.aws.com) is correct out of the box; override `driver` for
+                  other CSI providers (e.g. driver.longhorn.io, hostpath.csi.k8s.io).
+                  PSQLClusters target whatever StorageClass the cluster already
+                  provides (Auto Mode ships gp3 by default) — the stack does not
+                  compose a StorageClass.
+                type: object
+                properties:
+                  enabled:
+                    description: Compose the VolumeSnapshotClass. Defaults to true.
+                    type: boolean
+                    default: true
+                  name:
+                    description: VolumeSnapshotClass name. Defaults to "psql" — PSQLBranch references this name.
+                    type: string
+                    default: psql
+                  driver:
+                    description: CSI driver. Defaults to ebs.csi.aws.com (EKS Auto Mode default).
+                    type: string
+                    default: ebs.csi.aws.com
+                  deletionPolicy:
+                    description: Snapshot deletion policy. Defaults to Delete.
+                    type: string
+                    enum:
+                    - Delete
+                    - Retain
+                    default: Delete
+                  parameters:
+                    description: Driver-specific parameters passed to the VolumeSnapshotClass.
+                    type: object
+                    additionalProperties:
+                      type: string
                     x-kubernetes-preserve-unknown-fields: true
             required:
             - clusterName
@@ -280,7 +188,7 @@ spec:
             type: object
             properties:
               ready:
-                description: Overall readiness of the stack (CNPG + scale-to-zero plugin + Atlas).
+                description: Overall readiness — true once CNPG, Atlas, the scale-to-zero plugin, and the VolumeSnapshotClass are all Ready.
                 type: boolean
         required:
         - spec

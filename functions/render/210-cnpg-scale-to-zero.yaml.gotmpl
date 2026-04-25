@@ -304,10 +304,6 @@ spec:
               app: scale-to-zero
           spec:
             serviceAccountName: cnpg-scale-to-zero-plugin
-            {{- if $state.nodePool.enabled }}
-            nodeSelector: {{ $state.nodePool.nodeSelector | toJson }}
-            tolerations: {{ $state.nodePool.tolerations | toJson }}
-            {{- end }}
             {{- if and $state.ha.enabled $state.ha.topologySpreadByZone }}
             topologySpreadConstraints:
             - maxSkew: 1

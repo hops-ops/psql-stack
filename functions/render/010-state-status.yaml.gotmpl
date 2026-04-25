@@ -1,6 +1,6 @@
 # code: language=yaml
 #
-# Extract observed state from all composed resources and compute status
+# Extract observed state from composed resources and compute status
 #
 
 {{- $observed := $.observed.resources | default dict }}
@@ -10,7 +10,7 @@
 # ==============================================================================
 
 {{- $checkReady := dict }}
-{{- range $key := list "cnpg-operator" "cnpg-scale-to-zero" "atlas-operator" "nodepool-branches" "nodepool-primary" "node-prep" "longhorn" "storageclass-longhorn" }}
+{{- range $key := list "cnpg-operator" "cnpg-scale-to-zero" "atlas-operator" "volumesnapshotclass" }}
   {{- $entry := get $observed $key | default dict }}
   {{- $resource := $entry.resource | default dict }}
   {{- $status := $resource.status | default dict }}
@@ -30,11 +30,7 @@
   "cnpg" (dict "ready" (get $checkReady "cnpg-operator"))
   "scaleToZeroPlugin" (dict "ready" (get $checkReady "cnpg-scale-to-zero"))
   "atlasOperator" (dict "ready" (get $checkReady "atlas-operator"))
-  "nodepoolBranches" (dict "ready" (get $checkReady "nodepool-branches"))
-  "nodepoolPrimary" (dict "ready" (get $checkReady "nodepool-primary"))
-  "nodePrep" (dict "ready" (get $checkReady "node-prep"))
-  "longhorn" (dict "ready" (get $checkReady "longhorn"))
-  "storageClass" (dict "ready" (get $checkReady "storageclass-longhorn"))
+  "snapshotClass" (dict "ready" (get $checkReady "volumesnapshotclass"))
 ) }}
 
 # ==============================================================================

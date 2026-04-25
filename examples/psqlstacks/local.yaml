@@ -1,9 +1,8 @@
-# Local: NodePool / Longhorn disabled — gets just CNPG + Atlas + S2Z plugin
-# installed on whatever StorageClass already exists on the local cluster.
+# Local: dev cluster without a CSI snapshot controller.
 #
-# Useful for kind / k3d dev clusters that can't run Longhorn V2.
-# PSQLClusters on this stack will need to specify a non-Longhorn SC
-# (`spec.storage.class: standard` for k3d, etc.).
+# Disables the VolumeSnapshotClass composition (PSQLBranch won't work but
+# PSQLCluster still does), and points at a local Helm/Kubernetes
+# ProviderConfig instead of the per-cluster ProviderConfig pattern.
 #
 apiVersion: hops.ops.com.ai/v1alpha1
 kind: PSQLStack
@@ -14,5 +13,9 @@ spec:
   clusterName: local
   helmProviderConfigRef:
     name: default
-  nodePool:
+  kubernetesProviderConfigRef:
+    name: default
+  snapshotClass:
+    enabled: false
+  scaleToZeroPlugin:
     enabled: false

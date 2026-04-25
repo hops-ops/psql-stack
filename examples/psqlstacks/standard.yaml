@@ -1,5 +1,4 @@
-# Standard: production posture with explicit overrides for sizing,
-# scheduling, and chart values.
+# Standard: production posture with HA + atlas tuning + team labels.
 #
 apiVersion: hops.ops.com.ai/v1alpha1
 kind: PSQLStack
@@ -11,21 +10,10 @@ spec:
   namespace: cnpg-system
   labels:
     team: platform
-  nodePool:
-    enabled: true
-    branches:
-      enabled: true
-      limits: { cpu: "32", memory: "128Gi" }
-    primary:
-      enabled: true
-      limits: { cpu: "64", memory: "256Gi" }
-  storage:
-    replicationFactor: 3
-    thin: true
   ha:
     enabled: true                # 3 replicas + topology spread by zone on
     replicas: 3                  # all platform components (CNPG, Atlas,
-    topologySpreadByZone: true   # S2Z plugin, Longhorn CSI controllers)
+    topologySpreadByZone: true   # S2Z plugin Deployment).
   scaleToZeroPlugin:
     enabled: true
   atlasOperator:

@@ -1,3 +1,14 @@
+# Minimal: just the platform operators on a target cluster.
+#
+# Composes:
+#   - CloudNativePG operator (Helm)
+#   - cnpg-i-scale-to-zero plugin (set of Objects, default-on)
+#   - Atlas operator (Helm)
+#   - psql-ebs StorageClass (default-on, EBS gp3)
+#
+# No NodePool, no Mayastor, no LVM. Suitable for clusters that just need
+# CNPG with EBS-backed storage and pg_basebackup-only branching.
+#
 apiVersion: hops.ops.com.ai/v1alpha1
 kind: PSQLStack
 metadata:

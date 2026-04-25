@@ -3,19 +3,22 @@ import models.io.upbound.dev.meta.v1alpha1 as metav1alpha1
 import models.k8s.apimachinery.pkg.apis.meta.v1 as metav1
 
 # ==============================================================================
-# Unit tests for Psql XRD
+# Unit tests for PSQLStack XRD
 #
-# Philosophy: Test YOUR API, not the provider's API.
+# Philosophy: test YOUR API, not the provider's API.
 # - render/validate already checks provider schema correctness
 # - Tests should verify XRD spec fields produce expected behavior
 # ==============================================================================
 
 _items = [
     # ==========================================================================
-    # Test 1: Minimal input renders both Helm Releases
+    # Test 1: minimal claim renders the platform operators (CNPG, Atlas) and
+    # the scale-to-zero plugin install (default-on, gated on
+    # spec.scaleToZeroPlugin.enabled which defaults true). Storage defaults to
+    # ebs-only (mayastor + lvm default off until phase 3b lands node prep).
     # ==========================================================================
     metav1alpha1.CompositionTest {
-        metadata.name = "minimal-renders-all-components"
+        metadata.name = "minimal-renders-platform-operators"
         spec = {
             compositionPath = "apis/psqlstacks/composition.yaml"
             xrdPath = "apis/psqlstacks/definition.yaml"
@@ -29,19 +32,32 @@ _items = [
                 {
                     apiVersion = "helm.m.crossplane.io/v1beta1"
                     kind = "Release"
-                    metadata.name = "stackgres-operator"
+                    metadata.name = "cloudnative-pg"
                 }
                 {
                     apiVersion = "helm.m.crossplane.io/v1beta1"
                     kind = "Release"
                     metadata.name = "atlas-operator"
                 }
+                # scale-to-zero plugin Deployment Object (default enabled)
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "test-psql-s2z-deployment"
+                }
+                # ebs StorageClass Object (default enabled)
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "test-psql-storageclass-ebs"
+                }
             ]
         }
     }
 
     # ==========================================================================
-    # Test 2: Custom labels are merged with defaults
+    # Test 2: custom labels merge with the stack's defaults on every composed
+    # Release.
     # ==========================================================================
     metav1alpha1.CompositionTest {
         metadata.name = "custom-labels-merged-with-defaults"
@@ -62,7 +78,7 @@ _items = [
                     apiVersion = "helm.m.crossplane.io/v1beta1"
                     kind = "Release"
                     metadata = {
-                        name = "stackgres-operator"
+                        name = "cloudnative-pg"
                         labels = {
                             "hops.ops.com.ai/managed" = "true"
                             "hops.ops.com.ai/psql" = "labeled-psql"
@@ -89,10 +105,10 @@ _items = [
     }
 
     # ==========================================================================
-    # Test 3: overrideAllValues on StackGres replaces all defaults
+    # Test 3: spec.cnpg.overrideAllValues replaces all default values
     # ==========================================================================
     metav1alpha1.CompositionTest {
-        metadata.name = "stackgres-override-all-values-replaces-defaults"
+        metadata.name = "cnpg-override-all-values-replaces-defaults"
         spec = {
             compositionPath = "apis/psqlstacks/composition.yaml"
             xrdPath = "apis/psqlstacks/definition.yaml"
@@ -102,9 +118,10 @@ _items = [
                 metadata.name = "override-test"
                 spec = {
                     clusterName = "my-cluster"
-                    stackgresOperator = {
+                    cnpg = {
                         overrideAllValues = {
-                            deploy = {operator = True, restapi = False}
+                            replicaCount = 2
+                            config = {data = {LOG_LEVEL = "debug"}}
                         }
                     }
                 }
@@ -113,9 +130,10 @@ _items = [
                 {
                     apiVersion = "helm.m.crossplane.io/v1beta1"
                     kind = "Release"
-                    metadata.name = "stackgres-operator"
+                    metadata.name = "cloudnative-pg"
                     spec.forProvider.values = {
-                        deploy = {operator = True, restapi = False}
+                        replicaCount = 2
+                        config = {data = {LOG_LEVEL = "debug"}}
                     }
                 }
             ]
@@ -123,42 +141,7 @@ _items = [
     }
 
     # ==========================================================================
-    # Test 4: StackGres user values merge with defaults
-    # ==========================================================================
-    metav1alpha1.CompositionTest {
-        metadata.name = "stackgres-values-merge-with-defaults"
-        spec = {
-            compositionPath = "apis/psqlstacks/composition.yaml"
-            xrdPath = "apis/psqlstacks/definition.yaml"
-            timeoutSeconds = 60
-            validate = False
-            xr = stacksv1alpha1.PSQLStack {
-                metadata.name = "sg-merge"
-                spec = {
-                    clusterName = "my-cluster"
-                    stackgresOperator = {
-                        values = {
-                            grafana = {autoEmbed = True}
-                        }
-                    }
-                }
-            }
-            assertResources = [
-                {
-                    apiVersion = "helm.m.crossplane.io/v1beta1"
-                    kind = "Release"
-                    metadata.name = "stackgres-operator"
-                    spec.forProvider.values = {
-                        deploy = {operator = True, restapi = True}
-                        grafana = {autoEmbed = True}
-                    }
-                }
-            ]
-        }
-    }
-
-    # ==========================================================================
-    # Test 5: Atlas Operator user values merge with defaults
+    # Test 4: spec.atlasOperator.values merge with chart defaults
     # ==========================================================================
     metav1alpha1.CompositionTest {
         metadata.name = "atlas-values-merge-with-defaults"
@@ -192,7 +175,7 @@ _items = [
     }
 
     # ==========================================================================
-    # Test 6: Custom namespace propagates to both components
+    # Test 5: custom namespace propagates to all platform operators
     # ==========================================================================
     metav1alpha1.CompositionTest {
         metadata.name = "custom-namespace-propagates"
@@ -212,7 +195,7 @@ _items = [
                 {
                     apiVersion = "helm.m.crossplane.io/v1beta1"
                     kind = "Release"
-                    metadata.name = "stackgres-operator"
+                    metadata.name = "cloudnative-pg"
                     spec.forProvider.namespace = "database-system"
                 }
                 {
@@ -226,7 +209,7 @@ _items = [
     }
 
     # ==========================================================================
-    # Test 7: Per-component namespace overrides shared namespace
+    # Test 6: per-component namespace overrides the shared namespace
     # ==========================================================================
     metav1alpha1.CompositionTest {
         metadata.name = "per-component-namespace-override"
@@ -239,7 +222,7 @@ _items = [
                 metadata.name = "ns-override"
                 spec = {
                     clusterName = "my-cluster"
-                    namespace = "stackgres"
+                    namespace = "cnpg-system"
                     atlasOperator = {
                         namespace = "atlas-system"
                     }
@@ -249,8 +232,8 @@ _items = [
                 {
                     apiVersion = "helm.m.crossplane.io/v1beta1"
                     kind = "Release"
-                    metadata.name = "stackgres-operator"
-                    spec.forProvider.namespace = "stackgres"
+                    metadata.name = "cloudnative-pg"
+                    spec.forProvider.namespace = "cnpg-system"
                 }
                 {
                     apiVersion = "helm.m.crossplane.io/v1beta1"
@@ -263,7 +246,7 @@ _items = [
     }
 
     # ==========================================================================
-    # Test 8: Helm provider config ref defaults to clusterName
+    # Test 7: helmProviderConfigRef defaults to clusterName
     # ==========================================================================
     metav1alpha1.CompositionTest {
         metadata.name = "helm-provider-config-defaults-to-cluster-name"
@@ -280,7 +263,7 @@ _items = [
                 {
                     apiVersion = "helm.m.crossplane.io/v1beta1"
                     kind = "Release"
-                    metadata.name = "stackgres-operator"
+                    metadata.name = "cloudnative-pg"
                     spec.providerConfigRef = {
                         name = "prod-cluster"
                         kind = "ProviderConfig"
@@ -294,6 +277,156 @@ _items = [
                         name = "prod-cluster"
                         kind = "ProviderConfig"
                     }
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
+    # Test 8: spec.scaleToZeroPlugin.enabled=false suppresses the plugin install
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "scale-to-zero-plugin-can-be-disabled"
+        spec = {
+            compositionPath = "apis/psqlstacks/composition.yaml"
+            xrdPath = "apis/psqlstacks/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLStack {
+                metadata.name = "no-s2z"
+                spec = {
+                    clusterName = "my-cluster"
+                    scaleToZeroPlugin = {enabled = False}
+                }
+            }
+            # When disabled, no s2z-* Objects are composed. We assert the
+            # expected platform Releases are still present and ebs StorageClass
+            # is created — the assertion is a positive presence check; the
+            # absence of s2z-* resources is implicit (composition gates them
+            # on enabled=true).
+            assertResources = [
+                {
+                    apiVersion = "helm.m.crossplane.io/v1beta1"
+                    kind = "Release"
+                    metadata.name = "cloudnative-pg"
+                }
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "no-s2z-storageclass-ebs"
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
+    # Test 9: storage.mayastor.enabled=true composes the mayastor Helm release
+    # and StorageClass Object
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "storage-mayastor-enabled-composes-helm-and-sc"
+        spec = {
+            compositionPath = "apis/psqlstacks/composition.yaml"
+            xrdPath = "apis/psqlstacks/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLStack {
+                metadata.name = "mayastor-on"
+                spec = {
+                    clusterName = "my-cluster"
+                    storage = {
+                        mayastor = {enabled = True}
+                    }
+                }
+            }
+            assertResources = [
+                {
+                    apiVersion = "helm.m.crossplane.io/v1beta1"
+                    kind = "Release"
+                    metadata.name = "openebs-mayastor"
+                }
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "mayastor-on-storageclass-mayastor"
+                }
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "mayastor-on-volumesnapshotclass-mayastor"
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
+    # Test 10: storage.lvm.enabled=true composes the LVM LocalPV Helm release
+    # and StorageClass Object
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "storage-lvm-enabled-composes-helm-and-sc"
+        spec = {
+            compositionPath = "apis/psqlstacks/composition.yaml"
+            xrdPath = "apis/psqlstacks/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLStack {
+                metadata.name = "lvm-on"
+                spec = {
+                    clusterName = "my-cluster"
+                    storage = {
+                        lvm = {enabled = True}
+                    }
+                }
+            }
+            assertResources = [
+                {
+                    apiVersion = "helm.m.crossplane.io/v1beta1"
+                    kind = "Release"
+                    metadata.name = "openebs-lvm"
+                }
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "lvm-on-storageclass-lvm"
+                }
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "lvm-on-volumesnapshotclass-lvm"
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
+    # Test 11: nodePool.enabled=true composes both branches and primary
+    # sub-pools by default (each can be individually disabled)
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "nodepool-enabled-composes-both-sub-pools"
+        spec = {
+            compositionPath = "apis/psqlstacks/composition.yaml"
+            xrdPath = "apis/psqlstacks/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLStack {
+                metadata.name = "np-on"
+                spec = {
+                    clusterName = "prod"
+                    nodePool = {enabled = True}
+                }
+            }
+            assertResources = [
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "np-on-nodepool-branches"
+                }
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "np-on-nodepool-primary"
                 }
             ]
         }

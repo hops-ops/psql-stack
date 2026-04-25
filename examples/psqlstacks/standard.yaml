@@ -1,3 +1,20 @@
+# Standard: production posture with Mayastor + LVM CoW storage and dedicated
+# NVMe NodePools.
+#
+# Composes:
+#   - Karpenter NodePool sub-pools: branches (spot) and primary (on-demand)
+#     on i4g/im4gn arm64 NVMe instance-store nodes
+#   - OpenEBS LVM LocalPV (single-node CoW for branches)
+#   - OpenEBS Mayastor (replicated NVMe-oF for serving primaries)
+#   - Three StorageClasses: psql-mayastor, psql-lvm, psql-ebs
+#   - VolumeSnapshotClasses for the two CoW backends
+#   - CloudNativePG operator (scheduled on the primary NodePool)
+#   - cnpg-i-scale-to-zero plugin
+#   - Atlas operator
+#
+# Requires phase 3b node-prep on each NVMe node (hugepages, nvme-tcp module,
+# LVM volume group on instance-store) before Mayastor / LVM PVCs can bind.
+#
 apiVersion: hops.ops.com.ai/v1alpha1
 kind: PSQLStack
 metadata:
@@ -10,12 +27,24 @@ spec:
     team: platform
   nodePool:
     enabled: true
+    branches:
+      enabled: true
+      limits: { cpu: "32", memory: "128Gi" }
+    primary:
+      enabled: true
+      limits: { cpu: "32", memory: "128Gi" }
   storage:
+    mayastor:
+      enabled: true
+      replicationFactor: 3
+      thin: true
+    lvm:
+      enabled: true
+      volumeGroup: psql-vg
     ebs:
       enabled: true
-      storageClassName: psql-ebs
-  cnpg:
-    values: {}
+  scaleToZeroPlugin:
+    enabled: true
   atlasOperator:
     values:
       prewarmDevDB: true

@@ -259,6 +259,24 @@ spec:
                               items:
                                 type: string
                           required: [key, operator]
+              nodePrep:
+                description: "Node-prep DaemonSet for Mayastor / LVM prerequisites. Runs as a privileged init container on each NVMe NodePool node and configures hugepages (vm.nr_hugepages, required by Mayastor SPDK), loads the nvme-tcp kernel module (Mayastor NVMe-oF transport), and creates the LVM volume group on the first instance-store NVMe device (OpenEBS LVM LocalPV). Composed only when nodePool.enabled AND (storage.mayastor.enabled OR storage.lvm.enabled). EKS Auto Mode / Bottlerocket may pre-load nvme-tcp; verify with `lsmod | grep nvme_tcp` before assuming the modprobe step is needed."
+                type: object
+                properties:
+                  enabled:
+                    description: Whether to compose the node-prep DaemonSet. Defaults to true (auto-gated by storage backends — when neither mayastor nor lvm is enabled the DaemonSet is skipped regardless).
+                    type: boolean
+                    default: true
+                  hugepages:
+                    type: object
+                    properties:
+                      count:
+                        description: Number of 2MiB hugepages to allocate on each node. Defaults to 1024 (2GiB total). Required for Mayastor; ignored when storage.mayastor.enabled is false.
+                        type: integer
+                        default: 1024
+                  image:
+                    description: Container image for the prep init container. Must have apk (or be pre-baked with lvm2 + util-linux). Defaults to alpine:3.20 (apk-installs lvm2 at startup).
+                    type: string
               cnpg:
                 description: Configuration for the CloudNativePG operator Helm release.
                 type: object

@@ -160,6 +160,24 @@
 {{- end }}
 
 # ==============================================================================
+# Node prep — hugepages, nvme-tcp module, LVM volume group on NVMe nodes
+# Auto-gated: only emitted when nodePool.enabled AND (mayastor || lvm enabled)
+# ==============================================================================
+{{- $nodePrepSpec := $spec.nodePrep | default dict }}
+{{- $nodePrepEnabled := true }}
+{{- if hasKey $nodePrepSpec "enabled" }}
+  {{- $nodePrepEnabled = $nodePrepSpec.enabled }}
+{{- end }}
+{{- $nodePrepNeeded := and $nodePoolEnabled (or $mayastorEnabled $lvmEnabled) }}
+{{- $nodePrep := dict
+  "enabled" (and $nodePrepEnabled $nodePrepNeeded)
+  "hugepages" (dict
+    "count" (((($nodePrepSpec.hugepages | default dict)).count) | default 1024)
+  )
+  "image" ($nodePrepSpec.image | default "alpine:3.20")
+}}
+
+# ==============================================================================
 # Per-component configuration
 # ==============================================================================
 {{- $cnpg := $spec.cnpg | default dict }}
@@ -205,6 +223,7 @@
       "requirements" $primaryRequirements
     )
   )
+  "nodePrep" $nodePrep
   "cnpg" (dict
     "name" ($cnpg.name | default "cloudnative-pg")
     "namespace" ($cnpg.namespace | default $namespace)

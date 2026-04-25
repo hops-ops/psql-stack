@@ -37,7 +37,14 @@ spec:
     values:
       {{- toYaml $storage.overrideAllValues | nindent 6 }}
     {{- else }}
-    {{- $chartDefaults := dict }}
+    {{- /* Skip Mayastor's bundled VolumeSnapshotClass CRD install. The CRDs
+           come from the cluster's snapshot-controller (must be installed
+           separately — typically already present on EKS Auto Mode or via
+           another stack). Avoids Helm "ownership" conflicts when more than
+           one chart bundles the same CRDs. */}}
+    {{- $chartDefaults := dict
+      "crds" (dict "csi" (dict "volumeSnapshots" (dict "enabled" false)))
+    }}
     {{- if $state.nodePool.enabled }}
       {{- $_ := set $chartDefaults "io_engine" (dict
         "nodeSelector" $state.nodePool.nodeSelector

@@ -1,9 +1,9 @@
-# Local: single-node CoW with LVM, no Mayastor (replication needs >1 node),
-# no dedicated NodePool. Useful for kind / k3d dev clusters where you want
-# fast branching via LVM thin clones but don't need replicated storage.
+# Local: NodePool / Mayastor disabled — gets just CNPG + Atlas + S2Z plugin
+# installed on whatever StorageClass already exists on the local cluster.
 #
-# Requires LVM tools + a `psql-vg` volume group on the local node before
-# psql-lvm PVCs can bind.
+# Useful for kind / k3d dev clusters that can't run Mayastor.
+# PSQLClusters on this stack will need to specify a non-Mayastor SC
+# (`spec.storage.class: standard` for k3d, etc.).
 #
 apiVersion: hops.ops.com.ai/v1alpha1
 kind: PSQLStack
@@ -14,11 +14,5 @@ spec:
   clusterName: local
   helmProviderConfigRef:
     name: default
-  storage:
-    lvm:
-      enabled: true
-      volumeGroup: psql-vg
-    ebs:
-      enabled: false
-    mayastor:
-      enabled: false
+  nodePool:
+    enabled: false

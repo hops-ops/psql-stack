@@ -10,7 +10,7 @@
 # ==============================================================================
 
 {{- $checkReady := dict }}
-{{- range $key := list "cnpg-operator" "cnpg-scale-to-zero" "atlas-operator" "nodepool-branches" "nodepool-primary" "node-prep" "openebs-lvm" "openebs-mayastor" "storageclass-mayastor" "storageclass-lvm" "storageclass-ebs" }}
+{{- range $key := list "cnpg-operator" "cnpg-scale-to-zero" "atlas-operator" "nodepool-branches" "nodepool-primary" "node-prep" "openebs-mayastor" "storageclass-mayastor" }}
   {{- $entry := get $observed $key | default dict }}
   {{- $resource := $entry.resource | default dict }}
   {{- $status := $resource.status | default dict }}
@@ -33,11 +33,8 @@
   "nodepoolBranches" (dict "ready" (get $checkReady "nodepool-branches"))
   "nodepoolPrimary" (dict "ready" (get $checkReady "nodepool-primary"))
   "nodePrep" (dict "ready" (get $checkReady "node-prep"))
-  "openebsLvm" (dict "ready" (get $checkReady "openebs-lvm"))
-  "openebsMayastor" (dict "ready" (get $checkReady "openebs-mayastor"))
-  "storageClassMayastor" (dict "ready" (get $checkReady "storageclass-mayastor"))
-  "storageClassLvm" (dict "ready" (get $checkReady "storageclass-lvm"))
-  "storageClassEbs" (dict "ready" (get $checkReady "storageclass-ebs"))
+  "mayastor" (dict "ready" (get $checkReady "openebs-mayastor"))
+  "storageClass" (dict "ready" (get $checkReady "storageclass-mayastor"))
 ) }}
 
 # ==============================================================================

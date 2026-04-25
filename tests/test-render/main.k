@@ -12,13 +12,12 @@ import models.k8s.apimachinery.pkg.apis.meta.v1 as metav1
 
 _items = [
     # ==========================================================================
-    # Test 1: minimal claim renders the platform operators (CNPG, Atlas) and
-    # the scale-to-zero plugin install (default-on, gated on
-    # spec.scaleToZeroPlugin.enabled which defaults true). Storage defaults to
-    # ebs-only (mayastor + lvm default off until phase 3b lands node prep).
+    # Test 1: minimal claim renders the platform operators (CNPG, Atlas), the
+    # scale-to-zero plugin (default-on), Mayastor + StorageClass + node-prep +
+    # both NodePool sub-pools (nodePool default-on now — stack's whole point).
     # ==========================================================================
     metav1alpha1.CompositionTest {
-        metadata.name = "minimal-renders-platform-operators"
+        metadata.name = "minimal-renders-platform-stack"
         spec = {
             compositionPath = "apis/psqlstacks/composition.yaml"
             xrdPath = "apis/psqlstacks/definition.yaml"
@@ -39,17 +38,40 @@ _items = [
                     kind = "Release"
                     metadata.name = "atlas-operator"
                 }
-                # scale-to-zero plugin Deployment Object (default enabled)
+                {
+                    apiVersion = "helm.m.crossplane.io/v1beta1"
+                    kind = "Release"
+                    metadata.name = "openebs-mayastor"
+                }
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "test-psql-storageclass-mayastor"
+                }
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "test-psql-volumesnapshotclass-mayastor"
+                }
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                     kind = "Object"
                     metadata.name = "test-psql-s2z-deployment"
                 }
-                # ebs StorageClass Object (default enabled)
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                     kind = "Object"
-                    metadata.name = "test-psql-storageclass-ebs"
+                    metadata.name = "test-psql-nodepool-branches"
+                }
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "test-psql-nodepool-primary"
+                }
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "test-psql-node-prep"
                 }
             ]
         }
@@ -313,120 +335,80 @@ _items = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                     kind = "Object"
-                    metadata.name = "no-s2z-storageclass-ebs"
+                    metadata.name = "no-s2z-storageclass-mayastor"
                 }
             ]
         }
     }
 
     # ==========================================================================
-    # Test 9: storage.mayastor.enabled=true composes the mayastor Helm release
-    # and StorageClass Object
+    # Test 9: nodePool.enabled=false skips Mayastor, StorageClass, and node-prep
+    # (the stack's storage requires the NodePool to have something to schedule
+    # on — disabling the NodePool reasonably skips everything that needs it).
     # ==========================================================================
     metav1alpha1.CompositionTest {
-        metadata.name = "storage-mayastor-enabled-composes-helm-and-sc"
+        metadata.name = "nodepool-disabled-skips-storage"
         spec = {
             compositionPath = "apis/psqlstacks/composition.yaml"
             xrdPath = "apis/psqlstacks/definition.yaml"
             timeoutSeconds = 60
             validate = False
             xr = stacksv1alpha1.PSQLStack {
-                metadata.name = "mayastor-on"
+                metadata.name = "np-off"
+                spec = {
+                    clusterName = "my-cluster"
+                    nodePool = {enabled = False}
+                }
+            }
+            # Positive presence: cnpg + atlas still composed
+            assertResources = [
+                {
+                    apiVersion = "helm.m.crossplane.io/v1beta1"
+                    kind = "Release"
+                    metadata.name = "cloudnative-pg"
+                }
+                {
+                    apiVersion = "helm.m.crossplane.io/v1beta1"
+                    kind = "Release"
+                    metadata.name = "atlas-operator"
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
+    # Test 10: spec.storage settings flow through to the StorageClass
+    # parameters (replicationFactor, thin)
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "storage-settings-flow-through-to-sc"
+        spec = {
+            compositionPath = "apis/psqlstacks/composition.yaml"
+            xrdPath = "apis/psqlstacks/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLStack {
+                metadata.name = "storage-tweaks"
                 spec = {
                     clusterName = "my-cluster"
                     storage = {
-                        mayastor = {enabled = True}
+                        replicationFactor = 1
+                        thin = False
                     }
                 }
             }
             assertResources = [
                 {
-                    apiVersion = "helm.m.crossplane.io/v1beta1"
-                    kind = "Release"
-                    metadata.name = "openebs-mayastor"
-                }
-                {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                     kind = "Object"
-                    metadata.name = "mayastor-on-storageclass-mayastor"
-                }
-                {
-                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
-                    kind = "Object"
-                    metadata.name = "mayastor-on-volumesnapshotclass-mayastor"
-                }
-            ]
-        }
-    }
-
-    # ==========================================================================
-    # Test 10: storage.lvm.enabled=true composes the LVM LocalPV Helm release
-    # and StorageClass Object
-    # ==========================================================================
-    metav1alpha1.CompositionTest {
-        metadata.name = "storage-lvm-enabled-composes-helm-and-sc"
-        spec = {
-            compositionPath = "apis/psqlstacks/composition.yaml"
-            xrdPath = "apis/psqlstacks/definition.yaml"
-            timeoutSeconds = 60
-            validate = False
-            xr = stacksv1alpha1.PSQLStack {
-                metadata.name = "lvm-on"
-                spec = {
-                    clusterName = "my-cluster"
-                    storage = {
-                        lvm = {enabled = True}
+                    metadata.name = "storage-tweaks-storageclass-mayastor"
+                    spec.forProvider.manifest.parameters = {
+                        repl = "1"
+                        protocol = "nvmf"
+                        thin = "false"
+                        ioTimeout = "60"
+                        fsType = "ext4"
                     }
-                }
-            }
-            assertResources = [
-                {
-                    apiVersion = "helm.m.crossplane.io/v1beta1"
-                    kind = "Release"
-                    metadata.name = "openebs-lvm"
-                }
-                {
-                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
-                    kind = "Object"
-                    metadata.name = "lvm-on-storageclass-lvm"
-                }
-                {
-                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
-                    kind = "Object"
-                    metadata.name = "lvm-on-volumesnapshotclass-lvm"
-                }
-            ]
-        }
-    }
-
-    # ==========================================================================
-    # Test 11: nodePool.enabled=true composes both branches and primary
-    # sub-pools by default (each can be individually disabled)
-    # ==========================================================================
-    metav1alpha1.CompositionTest {
-        metadata.name = "nodepool-enabled-composes-both-sub-pools"
-        spec = {
-            compositionPath = "apis/psqlstacks/composition.yaml"
-            xrdPath = "apis/psqlstacks/definition.yaml"
-            timeoutSeconds = 60
-            validate = False
-            xr = stacksv1alpha1.PSQLStack {
-                metadata.name = "np-on"
-                spec = {
-                    clusterName = "prod"
-                    nodePool = {enabled = True}
-                }
-            }
-            assertResources = [
-                {
-                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
-                    kind = "Object"
-                    metadata.name = "np-on-nodepool-branches"
-                }
-                {
-                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
-                    kind = "Object"
-                    metadata.name = "np-on-nodepool-primary"
                 }
             ]
         }

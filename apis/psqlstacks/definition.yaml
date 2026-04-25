@@ -67,124 +67,51 @@ spec:
                 description: Shared namespace for CNPG operator, scale-to-zero plugin, and Atlas operator. Defaults to cnpg-system. Per-component namespace overrides this.
                 type: string
               storage:
-                description: "Three-profile storage layer. mayastor = replicated NVMe-oF (CoW + HA), lvm = single-node LVM thin clones (CoW, cheap), ebs = EBS gp3 (durable, no CoW). Each profile is independently toggleable. Mayastor + LVM require node-side prerequisites (hugepages, nvme-tcp module, NVMe instance-store devices, LVM volume groups) — these are provided by the NodePool config in phase 3 of the pivot. Until phase 3 lands, leave mayastor.enabled and lvm.enabled at false on clusters that don't already have those prereqs."
+                description: "Storage backend (OpenEBS Mayastor — replicated NVMe-oF with CoW snapshots). The stack is opinionated: it ships exactly one storage backend, sized for CoW + HA. Per-cluster cost is controlled via replicationFactor (3 for primaries, 1 for ephemeral branches). Requires NVMe instance-store nodes (provided by the NodePool block) plus hugepages and the nvme-tcp kernel module (provided by the node-prep DaemonSet). For non-CoW workloads, PSQLCluster claims can target any other StorageClass that exists on the target cluster (e.g., the cluster's default gp3 SC) — no need for the stack to compose that."
                 type: object
                 properties:
-                  mayastor:
-                    description: OpenEBS Mayastor (Replicated NVMe-oF) — enterprise default for primary serving clusters. Provides CoW snapshots + HA replication across NVMe nodes.
+                  chartVersion:
+                    description: Mayastor Helm chart version. Defaults to 2.10.0.
+                    type: string
+                  namespace:
+                    description: Namespace for the Mayastor install. Defaults to mayastor.
+                    type: string
+                  storageClassName:
+                    description: StorageClass name. Defaults to "psql".
+                    type: string
+                  replicationFactor:
+                    description: Default replication factor. Defaults to 3 (quorum-safe HA). Per-PVC override via the StorageClass parameters.
+                    type: integer
+                    default: 3
+                  thin:
+                    description: Thin-provision volumes (CoW). Defaults to true.
+                    type: boolean
+                    default: true
+                  reclaimPolicy:
+                    type: string
+                    enum: [Delete, Retain]
+                    default: Delete
+                  volumeBindingMode:
+                    type: string
+                    enum: [Immediate, WaitForFirstConsumer]
+                    default: WaitForFirstConsumer
+                  allowVolumeExpansion:
+                    type: boolean
+                    default: true
+                  values:
                     type: object
-                    properties:
-                      enabled:
-                        type: boolean
-                        default: false
-                      chartVersion:
-                        description: Mayastor Helm chart version. Defaults to 2.10.0.
-                        type: string
-                      namespace:
-                        description: Namespace override for the Mayastor install. Defaults to mayastor.
-                        type: string
-                      storageClassName:
-                        description: StorageClass name. Defaults to psql-mayastor.
-                        type: string
-                      replicationFactor:
-                        description: Number of replicas per volume. Defaults to 3 (quorum-safe HA).
-                        type: integer
-                        default: 3
-                      thin:
-                        description: Thin-provision volumes (CoW). Defaults to true.
-                        type: boolean
-                        default: true
-                      reclaimPolicy:
-                        type: string
-                        enum: [Delete, Retain]
-                        default: Delete
-                      volumeBindingMode:
-                        type: string
-                        enum: [Immediate, WaitForFirstConsumer]
-                        default: WaitForFirstConsumer
-                      allowVolumeExpansion:
-                        type: boolean
-                        default: true
-                      values:
-                        type: object
-                        x-kubernetes-preserve-unknown-fields: true
-                      overrideAllValues:
-                        type: object
-                        x-kubernetes-preserve-unknown-fields: true
-                  lvm:
-                    description: OpenEBS LVM LocalPV — single-node CoW via LVM thin volumes. Cheaper than Mayastor; appropriate for branches and dev clusters.
+                    x-kubernetes-preserve-unknown-fields: true
+                  overrideAllValues:
                     type: object
-                    properties:
-                      enabled:
-                        type: boolean
-                        default: false
-                      chartVersion:
-                        description: lvm-localpv Helm chart version. Defaults to 1.7.0.
-                        type: string
-                      namespace:
-                        description: Namespace override. Defaults to openebs.
-                        type: string
-                      storageClassName:
-                        description: StorageClass name. Defaults to psql-lvm.
-                        type: string
-                      volumeGroup:
-                        description: LVM Volume Group name configured on each NVMe node. Defaults to psql-vg.
-                        type: string
-                      reclaimPolicy:
-                        type: string
-                        enum: [Delete, Retain]
-                        default: Delete
-                      volumeBindingMode:
-                        type: string
-                        enum: [Immediate, WaitForFirstConsumer]
-                        default: WaitForFirstConsumer
-                      allowVolumeExpansion:
-                        type: boolean
-                        default: true
-                      values:
-                        type: object
-                        x-kubernetes-preserve-unknown-fields: true
-                      overrideAllValues:
-                        type: object
-                        x-kubernetes-preserve-unknown-fields: true
-                  ebs:
-                    description: EBS gp3 via the EKS Auto Mode CSI driver. Durable but no CoW; pg_basebackup-only branching. Always-on fallback profile.
-                    type: object
-                    properties:
-                      enabled:
-                        type: boolean
-                        default: true
-                      storageClassName:
-                        description: StorageClass name. Defaults to psql-ebs.
-                        type: string
-                      provisioner:
-                        description: CSI provisioner. Defaults to ebs.csi.eks.amazonaws.com (EKS Auto Mode).
-                        type: string
-                      parameters:
-                        description: Provisioner parameters. Defaults to gp3 + ext4.
-                        type: object
-                        additionalProperties:
-                          type: string
-                        x-kubernetes-preserve-unknown-fields: true
-                      reclaimPolicy:
-                        type: string
-                        enum: [Delete, Retain]
-                        default: Delete
-                      volumeBindingMode:
-                        type: string
-                        enum: [Immediate, WaitForFirstConsumer]
-                        default: WaitForFirstConsumer
-                      allowVolumeExpansion:
-                        type: boolean
-                        default: true
+                    x-kubernetes-preserve-unknown-fields: true
               nodePool:
                 description: "Dedicated Karpenter NodePools for PostgreSQL workloads. Two sub-pools — `branches` (spot arm64 NVMe, for ephemeral PSQLBranch workloads) and `primary` (on-demand arm64 NVMe, for replicated-cow PSQLCluster primaries where spot preemption would lose a Mayastor replica). Defaults to disabled — node-side prep for Mayastor/LVM (hugepages, nvme-tcp, LVM volume groups) is a separate concern handled in phase 3b. CNPG / scale-to-zero / Atlas schedule on the primary pool when enabled."
                 type: object
                 properties:
                   enabled:
-                    description: Master toggle. When false, neither sub-pool is created. When true, each sub-pool's `enabled` controls individual creation.
+                    description: Master toggle. When false, neither sub-pool is created and Mayastor / node-prep are skipped (the stack would have nothing to schedule on otherwise). Defaults to true — provisioning NVMe nodes is the stack's whole point.
                     type: boolean
-                    default: false
+                    default: true
                   nodeClassName:
                     description: EKS NodeClass shared by both sub-pools. Defaults to "default".
                     type: string
@@ -260,7 +187,7 @@ spec:
                                 type: string
                           required: [key, operator]
               nodePrep:
-                description: "Node-prep DaemonSet for Mayastor / LVM prerequisites. Runs as a privileged init container on each NVMe NodePool node and configures hugepages (vm.nr_hugepages, required by Mayastor SPDK), loads the nvme-tcp kernel module (Mayastor NVMe-oF transport), and creates the LVM volume group on the first instance-store NVMe device (OpenEBS LVM LocalPV). Composed only when nodePool.enabled AND (storage.mayastor.enabled OR storage.lvm.enabled). EKS Auto Mode / Bottlerocket may pre-load nvme-tcp; verify with `lsmod | grep nvme_tcp` before assuming the modprobe step is needed."
+                description: "Node-prep DaemonSet for Mayastor prerequisites. Runs as a privileged init container on each NVMe NodePool node and configures hugepages (vm.nr_hugepages, required by Mayastor SPDK) plus loads the nvme-tcp kernel module (Mayastor's NVMe-oF transport). Composed when nodePool.enabled. EKS Auto Mode / Bottlerocket may pre-load nvme-tcp; verify with `lsmod | grep nvme_tcp` before assuming the modprobe step is needed."
                 type: object
                 properties:
                   enabled:

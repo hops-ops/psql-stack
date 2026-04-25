@@ -15,8 +15,8 @@
 # Upstream: https://github.com/openebs/mayastor
 #
 
-{{- $mayastor := $state.storage.mayastor }}
-{{- if $mayastor.enabled }}
+{{- $storage := $state.storage }}
+{{- if $state.nodePool.enabled }}
 ---
 apiVersion: helm.m.crossplane.io/v1beta1
 kind: Release
@@ -31,11 +31,11 @@ spec:
     chart:
       name: mayastor
       repository: https://openebs.github.io/mayastor-extensions
-      version: {{ $mayastor.chartVersion | quote }}
-    namespace: {{ $mayastor.namespace }}
-    {{- if $mayastor.overrideAllValues }}
+      version: {{ $storage.chartVersion | quote }}
+    namespace: {{ $storage.namespace }}
+    {{- if $storage.overrideAllValues }}
     values:
-      {{- toYaml $mayastor.overrideAllValues | nindent 6 }}
+      {{- toYaml $storage.overrideAllValues | nindent 6 }}
     {{- else }}
     {{- $chartDefaults := dict }}
     {{- if $state.nodePool.enabled }}
@@ -44,7 +44,7 @@ spec:
         "tolerations" $state.nodePool.tolerations
       ) }}
     {{- end }}
-    {{- $mergedValues := mergeOverwrite $chartDefaults ($mayastor.values | default dict) }}
+    {{- $mergedValues := mergeOverwrite $chartDefaults ($storage.values | default dict) }}
     values:
       {{- toYaml $mergedValues | nindent 6 }}
     {{- end }}

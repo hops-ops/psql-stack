@@ -1,0 +1,64 @@
+# code: language=yaml
+#
+# StorageClass + VolumeSnapshotClass: psql-mayastor (replicated CoW)
+#
+# Created only when storage.mayastor.enabled. Enterprise default for primary
+# PSQLClusters — replicated NVMe-oF + thin-provisioned + CSI snapshots for
+# instant CoW branching via PSQLBranch.
+#
+
+{{- $mayastor := $state.storage.mayastor }}
+{{- if $mayastor.enabled }}
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-storageclass-mayastor
+  annotations:
+    {{ setResourceNameAnnotation "storageclass-mayastor" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    manifest:
+      apiVersion: storage.k8s.io/v1
+      kind: StorageClass
+      metadata:
+        name: {{ $mayastor.storageClassName }}
+        labels: {{ $state.labels | toJson }}
+      provisioner: io.openebs.csi-mayastor
+      parameters:
+        repl: "{{ $mayastor.replicationFactor }}"
+        protocol: nvmf
+        thin: "{{ $mayastor.thin }}"
+        ioTimeout: "60"
+        fsType: ext4
+      reclaimPolicy: {{ $mayastor.reclaimPolicy }}
+      volumeBindingMode: {{ $mayastor.volumeBindingMode }}
+      allowVolumeExpansion: {{ $mayastor.allowVolumeExpansion }}
+  providerConfigRef:
+    name: {{ $state.kubernetesProviderConfigRef.name }}
+    kind: {{ $state.kubernetesProviderConfigRef.kind }}
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-volumesnapshotclass-mayastor
+  annotations:
+    {{ setResourceNameAnnotation "volumesnapshotclass-mayastor" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    manifest:
+      apiVersion: snapshot.storage.k8s.io/v1
+      kind: VolumeSnapshotClass
+      metadata:
+        name: {{ $mayastor.storageClassName }}
+        labels: {{ $state.labels | toJson }}
+      driver: io.openebs.csi-mayastor
+      deletionPolicy: Delete
+  providerConfigRef:
+    name: {{ $state.kubernetesProviderConfigRef.name }}
+    kind: {{ $state.kubernetesProviderConfigRef.kind }}
+{{- end }}

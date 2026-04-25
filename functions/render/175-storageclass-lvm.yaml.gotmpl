@@ -1,0 +1,65 @@
+# code: language=yaml
+#
+# StorageClass + VolumeSnapshotClass: psql-lvm (single-node CoW)
+#
+# Created only when storage.lvm.enabled. LVM thin volumes provide CoW on a
+# single node; suitable for branches and dev clusters where node-loss is
+# tolerable. References the volume group set up by phase 3's NodePool config.
+#
+
+{{- $lvm := $state.storage.lvm }}
+{{- if $lvm.enabled }}
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-storageclass-lvm
+  annotations:
+    {{ setResourceNameAnnotation "storageclass-lvm" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    manifest:
+      apiVersion: storage.k8s.io/v1
+      kind: StorageClass
+      metadata:
+        name: {{ $lvm.storageClassName }}
+        labels: {{ $state.labels | toJson }}
+      provisioner: local.csi.openebs.io
+      parameters:
+        storage: lvm
+        volgroup: {{ $lvm.volumeGroup | quote }}
+        thinProvision: "yes"
+        fsType: ext4
+      reclaimPolicy: {{ $lvm.reclaimPolicy }}
+      volumeBindingMode: {{ $lvm.volumeBindingMode }}
+      allowVolumeExpansion: {{ $lvm.allowVolumeExpansion }}
+  providerConfigRef:
+    name: {{ $state.kubernetesProviderConfigRef.name }}
+    kind: {{ $state.kubernetesProviderConfigRef.kind }}
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-volumesnapshotclass-lvm
+  annotations:
+    {{ setResourceNameAnnotation "volumesnapshotclass-lvm" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    manifest:
+      apiVersion: snapshot.storage.k8s.io/v1
+      kind: VolumeSnapshotClass
+      metadata:
+        name: {{ $lvm.storageClassName }}
+        labels: {{ $state.labels | toJson }}
+      driver: local.csi.openebs.io
+      deletionPolicy: Delete
+      parameters:
+        snapSize: "1073741824"
+  providerConfigRef:
+    name: {{ $state.kubernetesProviderConfigRef.name }}
+    kind: {{ $state.kubernetesProviderConfigRef.kind }}
+{{- end }}

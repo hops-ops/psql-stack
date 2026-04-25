@@ -66,36 +66,117 @@ spec:
               namespace:
                 description: Shared namespace for CNPG operator, scale-to-zero plugin, and Atlas operator. Defaults to cnpg-system. Per-component namespace overrides this.
                 type: string
-              storageClass:
-                description: "StorageClass for PostgreSQL workloads. Default provisioner is the EKS Auto Mode EBS CSI driver. Disable with create=false if the cluster already provides a suitable StorageClass. (Phase 2 of the CNPG pivot will replace this with a three-profile storage block.)"
+              storage:
+                description: "Three-profile storage layer. mayastor = replicated NVMe-oF (CoW + HA), lvm = single-node LVM thin clones (CoW, cheap), ebs = EBS gp3 (durable, no CoW). Each profile is independently toggleable. Mayastor + LVM require node-side prerequisites (hugepages, nvme-tcp module, NVMe instance-store devices, LVM volume groups) — these are provided by the NodePool config in phase 3 of the pivot. Until phase 3 lands, leave mayastor.enabled and lvm.enabled at false on clusters that don't already have those prereqs."
                 type: object
                 properties:
-                  create:
-                    type: boolean
-                    default: true
-                  name:
-                    description: StorageClass name. Defaults to "psql".
-                    type: string
-                  provisioner:
-                    description: CSI provisioner. Defaults to ebs.csi.eks.amazonaws.com (EKS Auto Mode).
-                    type: string
-                  parameters:
-                    description: Provisioner parameters. Defaults to gp3 + ext4.
+                  mayastor:
+                    description: OpenEBS Mayastor (Replicated NVMe-oF) — enterprise default for primary serving clusters. Provides CoW snapshots + HA replication across NVMe nodes.
                     type: object
-                    additionalProperties:
-                      type: string
-                    x-kubernetes-preserve-unknown-fields: true
-                  reclaimPolicy:
-                    type: string
-                    enum: [Delete, Retain]
-                    default: Delete
-                  volumeBindingMode:
-                    type: string
-                    enum: [Immediate, WaitForFirstConsumer]
-                    default: WaitForFirstConsumer
-                  allowVolumeExpansion:
-                    type: boolean
-                    default: true
+                    properties:
+                      enabled:
+                        type: boolean
+                        default: false
+                      chartVersion:
+                        description: Mayastor Helm chart version. Defaults to 2.10.0.
+                        type: string
+                      namespace:
+                        description: Namespace override for the Mayastor install. Defaults to mayastor.
+                        type: string
+                      storageClassName:
+                        description: StorageClass name. Defaults to psql-mayastor.
+                        type: string
+                      replicationFactor:
+                        description: Number of replicas per volume. Defaults to 3 (quorum-safe HA).
+                        type: integer
+                        default: 3
+                      thin:
+                        description: Thin-provision volumes (CoW). Defaults to true.
+                        type: boolean
+                        default: true
+                      reclaimPolicy:
+                        type: string
+                        enum: [Delete, Retain]
+                        default: Delete
+                      volumeBindingMode:
+                        type: string
+                        enum: [Immediate, WaitForFirstConsumer]
+                        default: WaitForFirstConsumer
+                      allowVolumeExpansion:
+                        type: boolean
+                        default: true
+                      values:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      overrideAllValues:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                  lvm:
+                    description: OpenEBS LVM LocalPV — single-node CoW via LVM thin volumes. Cheaper than Mayastor; appropriate for branches and dev clusters.
+                    type: object
+                    properties:
+                      enabled:
+                        type: boolean
+                        default: false
+                      chartVersion:
+                        description: lvm-localpv Helm chart version. Defaults to 1.7.0.
+                        type: string
+                      namespace:
+                        description: Namespace override. Defaults to openebs.
+                        type: string
+                      storageClassName:
+                        description: StorageClass name. Defaults to psql-lvm.
+                        type: string
+                      volumeGroup:
+                        description: LVM Volume Group name configured on each NVMe node. Defaults to psql-vg.
+                        type: string
+                      reclaimPolicy:
+                        type: string
+                        enum: [Delete, Retain]
+                        default: Delete
+                      volumeBindingMode:
+                        type: string
+                        enum: [Immediate, WaitForFirstConsumer]
+                        default: WaitForFirstConsumer
+                      allowVolumeExpansion:
+                        type: boolean
+                        default: true
+                      values:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      overrideAllValues:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                  ebs:
+                    description: EBS gp3 via the EKS Auto Mode CSI driver. Durable but no CoW; pg_basebackup-only branching. Always-on fallback profile.
+                    type: object
+                    properties:
+                      enabled:
+                        type: boolean
+                        default: true
+                      storageClassName:
+                        description: StorageClass name. Defaults to psql-ebs.
+                        type: string
+                      provisioner:
+                        description: CSI provisioner. Defaults to ebs.csi.eks.amazonaws.com (EKS Auto Mode).
+                        type: string
+                      parameters:
+                        description: Provisioner parameters. Defaults to gp3 + ext4.
+                        type: object
+                        additionalProperties:
+                          type: string
+                        x-kubernetes-preserve-unknown-fields: true
+                      reclaimPolicy:
+                        type: string
+                        enum: [Delete, Retain]
+                        default: Delete
+                      volumeBindingMode:
+                        type: string
+                        enum: [Immediate, WaitForFirstConsumer]
+                        default: WaitForFirstConsumer
+                      allowVolumeExpansion:
+                        type: boolean
+                        default: true
               nodePool:
                 description: Optional dedicated Karpenter NodePool for PostgreSQL workloads. When enabled, CNPG, the scale-to-zero plugin, and Atlas schedule here via nodeSelector + tolerations. (Phase 3 of the CNPG pivot will split this into branches / primary sub-pools with hugepages + nvme-tcp pre-configured.)
                 type: object

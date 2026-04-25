@@ -5,18 +5,17 @@ metadata:
   namespace: default
 spec:
   clusterName: production-cluster
-  namespace: stackgres
+  namespace: cnpg-system
   labels:
     team: platform
   nodePool:
     enabled: true
-  storageClass:
-    create: true
-    name: psql
-  stackgresOperator:
-    values:
-      deploy:
-        restapi: true
+  storage:
+    ebs:
+      enabled: true
+      storageClassName: psql-ebs
+  cnpg:
+    values: {}
   atlasOperator:
     values:
       prewarmDevDB: true

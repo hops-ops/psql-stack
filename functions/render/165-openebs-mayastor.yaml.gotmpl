@@ -1,0 +1,55 @@
+# code: language=yaml
+#
+# Helm Release: OpenEBS Mayastor (Replicated NVMe-oF)
+#
+# Provides replicated CoW storage via NVMe-over-TCP. Enterprise default for
+# primary serving clusters — HA across N nodes (replicationFactor) plus
+# instant CoW snapshots for branching.
+#
+# Node-side prerequisites (provided by phase 3's NodePool config):
+#   - 2MiB hugepages (`vm.nr_hugepages=1024` minimum)
+#   - `nvme-tcp` kernel module loaded
+#   - Local NVMe instance-store devices for DiskPool allocation
+#
+# Chart: https://openebs.github.io/mayastor-extensions (chart name: mayastor)
+# Upstream: https://github.com/openebs/mayastor
+#
+
+{{- $mayastor := $state.storage.mayastor }}
+{{- if $mayastor.enabled }}
+---
+apiVersion: helm.m.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: openebs-mayastor
+  annotations:
+    {{ setResourceNameAnnotation "openebs-mayastor" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    chart:
+      name: mayastor
+      repository: https://openebs.github.io/mayastor-extensions
+      version: {{ $mayastor.chartVersion | quote }}
+    namespace: {{ $mayastor.namespace }}
+    {{- if $mayastor.overrideAllValues }}
+    values:
+      {{- toYaml $mayastor.overrideAllValues | nindent 6 }}
+    {{- else }}
+    {{- $chartDefaults := dict }}
+    {{- if $state.nodePool.enabled }}
+      {{- $_ := set $chartDefaults "io_engine" (dict
+        "nodeSelector" $state.nodePool.nodeSelector
+        "tolerations" $state.nodePool.tolerations
+      ) }}
+    {{- end }}
+    {{- $mergedValues := mergeOverwrite $chartDefaults ($mayastor.values | default dict) }}
+    values:
+      {{- toYaml $mergedValues | nindent 6 }}
+    {{- end }}
+  rollbackLimit: 3
+  providerConfigRef:
+    name: {{ $state.helmProviderConfigRef.name }}
+    kind: {{ $state.helmProviderConfigRef.kind }}
+{{- end }}

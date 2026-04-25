@@ -37,25 +37,68 @@
 }}
 
 # ==============================================================================
-# StorageClass (opt-in, default on) — creates a gp3 StorageClass on the target
-# cluster. EKS Auto Mode uses ebs.csi.eks.amazonaws.com.
-# Phase 2 of the CNPG pivot replaces this block with a three-profile model
-# (mayastor / lvm / ebs).
+# Storage — three-profile model (mayastor / lvm / ebs)
+# Each profile is independently toggleable. Mayastor and LVM require node-side
+# prerequisites (hugepages, nvme-tcp module, NVMe instance-store devices,
+# LVM volume groups) provided by phase 3's NodePool config — keep them
+# disabled until those prereqs land. EBS is always-safe as a fallback.
 # ==============================================================================
-{{- $sc := $spec.storageClass | default dict }}
-{{- $scCreate := true }}
-{{- if hasKey $sc "create" }}
-  {{- $scCreate = $sc.create }}
+{{- $storage := $spec.storage | default dict }}
+
+# Mayastor — replicated NVMe-oF (HA + CoW)
+{{- $mayastorSpec := $storage.mayastor | default dict }}
+{{- $mayastorEnabled := false }}
+{{- if hasKey $mayastorSpec "enabled" }}
+  {{- $mayastorEnabled = $mayastorSpec.enabled }}
 {{- end }}
-{{- $scName := $sc.name | default "psql" }}
-{{- $scProvisioner := $sc.provisioner | default "ebs.csi.eks.amazonaws.com" }}
-{{- $scParameters := $sc.parameters | default (dict "type" "gp3" "fsType" "ext4") }}
-{{- $scReclaimPolicy := $sc.reclaimPolicy | default "Delete" }}
-{{- $scVolumeBindingMode := $sc.volumeBindingMode | default "WaitForFirstConsumer" }}
-{{- $scAllowVolumeExpansion := true }}
-{{- if hasKey $sc "allowVolumeExpansion" }}
-  {{- $scAllowVolumeExpansion = $sc.allowVolumeExpansion }}
+{{- $mayastor := dict
+  "enabled" $mayastorEnabled
+  "chartVersion" ($mayastorSpec.chartVersion | default "2.10.0")
+  "namespace" ($mayastorSpec.namespace | default "mayastor")
+  "storageClassName" ($mayastorSpec.storageClassName | default "psql-mayastor")
+  "replicationFactor" ($mayastorSpec.replicationFactor | default 3)
+  "thin" (or (eq (toString ($mayastorSpec.thin | default true)) "true") false)
+  "reclaimPolicy" ($mayastorSpec.reclaimPolicy | default "Delete")
+  "volumeBindingMode" ($mayastorSpec.volumeBindingMode | default "WaitForFirstConsumer")
+  "allowVolumeExpansion" (or (eq (toString ($mayastorSpec.allowVolumeExpansion | default true)) "true") false)
+  "values" ($mayastorSpec.values | default dict)
+  "overrideAllValues" ($mayastorSpec.overrideAllValues | default dict)
+}}
+
+# LVM LocalPV — single-node CoW via LVM thin clones
+{{- $lvmSpec := $storage.lvm | default dict }}
+{{- $lvmEnabled := false }}
+{{- if hasKey $lvmSpec "enabled" }}
+  {{- $lvmEnabled = $lvmSpec.enabled }}
 {{- end }}
+{{- $lvm := dict
+  "enabled" $lvmEnabled
+  "chartVersion" ($lvmSpec.chartVersion | default "1.7.0")
+  "namespace" ($lvmSpec.namespace | default "openebs")
+  "storageClassName" ($lvmSpec.storageClassName | default "psql-lvm")
+  "volumeGroup" ($lvmSpec.volumeGroup | default "psql-vg")
+  "reclaimPolicy" ($lvmSpec.reclaimPolicy | default "Delete")
+  "volumeBindingMode" ($lvmSpec.volumeBindingMode | default "WaitForFirstConsumer")
+  "allowVolumeExpansion" (or (eq (toString ($lvmSpec.allowVolumeExpansion | default true)) "true") false)
+  "values" ($lvmSpec.values | default dict)
+  "overrideAllValues" ($lvmSpec.overrideAllValues | default dict)
+}}
+
+# EBS gp3 (EKS Auto Mode CSI) — durable fallback, default on
+{{- $ebsSpec := $storage.ebs | default dict }}
+{{- $ebsEnabled := true }}
+{{- if hasKey $ebsSpec "enabled" }}
+  {{- $ebsEnabled = $ebsSpec.enabled }}
+{{- end }}
+{{- $ebs := dict
+  "enabled" $ebsEnabled
+  "storageClassName" ($ebsSpec.storageClassName | default "psql-ebs")
+  "provisioner" ($ebsSpec.provisioner | default "ebs.csi.eks.amazonaws.com")
+  "parameters" ($ebsSpec.parameters | default (dict "type" "gp3" "fsType" "ext4"))
+  "reclaimPolicy" ($ebsSpec.reclaimPolicy | default "Delete")
+  "volumeBindingMode" ($ebsSpec.volumeBindingMode | default "WaitForFirstConsumer")
+  "allowVolumeExpansion" (or (eq (toString ($ebsSpec.allowVolumeExpansion | default true)) "true") false)
+}}
 
 # ==============================================================================
 # NodePool (opt-in) — dedicates a pool of nodes for PostgreSQL workloads.
@@ -109,14 +152,10 @@
   "labels" $labels
   "helmProviderConfigRef" $helmProviderConfigRef
   "kubernetesProviderConfigRef" $k8sProviderConfigRef
-  "storageClass" (dict
-    "create" $scCreate
-    "name" $scName
-    "provisioner" $scProvisioner
-    "parameters" $scParameters
-    "reclaimPolicy" $scReclaimPolicy
-    "volumeBindingMode" $scVolumeBindingMode
-    "allowVolumeExpansion" $scAllowVolumeExpansion
+  "storage" (dict
+    "mayastor" $mayastor
+    "lvm" $lvm
+    "ebs" $ebs
   )
   "nodePool" (dict
     "enabled" $nodePoolEnabled

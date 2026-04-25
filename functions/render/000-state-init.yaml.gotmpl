@@ -101,33 +101,62 @@
 }}
 
 # ==============================================================================
-# NodePool (opt-in) — dedicates a pool of nodes for PostgreSQL workloads.
-# Defaults: arm64 spot on r7g/m7g (memory-optimized + general-purpose Graviton).
-# Phase 3 of the CNPG pivot splits this into branches / primary sub-pools with
-# hugepages + nvme-tcp pre-configured for Mayastor.
+# NodePool — branches + primary sub-pools (NVMe arm64 Graviton)
+# Defaults to enabled=false; existing claims unchanged. When enabled, both
+# sub-pools materialize unless individually disabled.
+#
+# Common scheduling: nodeSelector workload-type=psql, taint psql=true:NoSchedule.
+# Each pool adds a sub-label (sub-pool=branches | sub-pool=primary) and matching
+# taint (sub-pool=branches:NoSchedule | sub-pool=primary:NoSchedule) so workloads
+# can target one pool specifically.
 # ==============================================================================
 {{- $nodePoolSpec := $spec.nodePool | default dict }}
 {{- $nodePoolEnabled := false }}
 {{- if hasKey $nodePoolSpec "enabled" }}
   {{- $nodePoolEnabled = $nodePoolSpec.enabled }}
 {{- end }}
-{{- $nodePoolName := printf "%s-psql" $clusterName }}
 {{- $nodePoolNodeClassName := $nodePoolSpec.nodeClassName | default "default" }}
-{{- $nodePoolLimits := $nodePoolSpec.limits | default (dict "cpu" "16" "memory" "64Gi") }}
-{{- $nodePoolRequirements := $nodePoolSpec.requirements | default (list
-  (dict "key" "kubernetes.io/arch" "operator" "In" "values" (list "arm64"))
-  (dict "key" "karpenter.sh/capacity-type" "operator" "In" "values" (list "spot"))
-  (dict "key" "node.kubernetes.io/instance-type" "operator" "In" "values" (list "r7g.large" "r7g.xlarge" "m7g.large" "m7g.xlarge"))
-) }}
 {{- $nodePoolDisruption := $nodePoolSpec.disruption | default (dict "consolidationPolicy" "WhenEmptyOrUnderutilized" "consolidateAfter" "60s") }}
 
-{{- $nodePoolTaintKey := "psql" }}
-{{- $nodePoolTaintValue := "true" }}
+# Default NVMe arm64 instance types
+{{- $nvmeInstanceTypes := list "i4g.2xlarge" "i4g.4xlarge" "im4gn.2xlarge" }}
+
+# branches sub-pool (spot)
+{{- $branchesSpec := $nodePoolSpec.branches | default dict }}
+{{- $branchesEnabled := true }}
+{{- if hasKey $branchesSpec "enabled" }}
+  {{- $branchesEnabled = $branchesSpec.enabled }}
+{{- end }}
+{{- $branchesLimits := $branchesSpec.limits | default (dict "cpu" "32" "memory" "128Gi") }}
+{{- $branchesRequirements := $branchesSpec.requirements | default (list
+  (dict "key" "kubernetes.io/arch" "operator" "In" "values" (list "arm64"))
+  (dict "key" "karpenter.sh/capacity-type" "operator" "In" "values" (list "spot"))
+  (dict "key" "node.kubernetes.io/instance-type" "operator" "In" "values" $nvmeInstanceTypes)
+) }}
+
+# primary sub-pool (on-demand)
+{{- $primarySpec := $nodePoolSpec.primary | default dict }}
+{{- $primaryEnabled := true }}
+{{- if hasKey $primarySpec "enabled" }}
+  {{- $primaryEnabled = $primarySpec.enabled }}
+{{- end }}
+{{- $primaryLimits := $primarySpec.limits | default (dict "cpu" "32" "memory" "128Gi") }}
+{{- $primaryRequirements := $primarySpec.requirements | default (list
+  (dict "key" "kubernetes.io/arch" "operator" "In" "values" (list "arm64"))
+  (dict "key" "karpenter.sh/capacity-type" "operator" "In" "values" (list "on-demand"))
+  (dict "key" "node.kubernetes.io/instance-type" "operator" "In" "values" $nvmeInstanceTypes)
+) }}
+
+# Operator scheduling — operators (CNPG, Atlas, scale-to-zero) ride the primary
+# pool when enabled (more reliable than spot for control-plane components)
 {{- $nodePoolNodeSelector := dict }}
 {{- $nodePoolTolerations := list }}
-{{- if $nodePoolEnabled }}
-  {{- $nodePoolNodeSelector = dict "workload-type" "psql" }}
-  {{- $nodePoolTolerations = list (dict "key" $nodePoolTaintKey "value" $nodePoolTaintValue "effect" "NoSchedule") }}
+{{- if and $nodePoolEnabled $primaryEnabled }}
+  {{- $nodePoolNodeSelector = dict "workload-type" "psql" "sub-pool" "primary" }}
+  {{- $nodePoolTolerations = list
+    (dict "key" "psql" "value" "true" "effect" "NoSchedule")
+    (dict "key" "sub-pool" "value" "primary" "effect" "NoSchedule")
+  }}
 {{- end }}
 
 # ==============================================================================
@@ -159,15 +188,22 @@
   )
   "nodePool" (dict
     "enabled" $nodePoolEnabled
-    "name" $nodePoolName
     "nodeClassName" $nodePoolNodeClassName
-    "limits" $nodePoolLimits
-    "requirements" $nodePoolRequirements
     "disruption" $nodePoolDisruption
-    "taintKey" $nodePoolTaintKey
-    "taintValue" $nodePoolTaintValue
     "nodeSelector" $nodePoolNodeSelector
     "tolerations" $nodePoolTolerations
+    "branches" (dict
+      "enabled" $branchesEnabled
+      "name" (printf "%s-psql-branches" $clusterName)
+      "limits" $branchesLimits
+      "requirements" $branchesRequirements
+    )
+    "primary" (dict
+      "enabled" $primaryEnabled
+      "name" (printf "%s-psql-primary" $clusterName)
+      "limits" $primaryLimits
+      "requirements" $primaryRequirements
+    )
   )
   "cnpg" (dict
     "name" ($cnpg.name | default "cloudnative-pg")

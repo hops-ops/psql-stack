@@ -1,0 +1,53 @@
+# code: language=yaml
+#
+# Karpenter NodePool: branches sub-pool (spot arm64 NVMe)
+#
+# Targets ephemeral PSQLBranch workloads. Spot capacity is acceptable here
+# because branches are designed to be reproducible from their parent.
+#
+# Labels: workload-type=psql, sub-pool=branches
+# Taints: psql=true:NoSchedule, sub-pool=branches:NoSchedule
+#
+
+{{- if and $state.nodePool.enabled $state.nodePool.branches.enabled }}
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-nodepool-branches
+  annotations:
+    {{ setResourceNameAnnotation "nodepool-branches" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    manifest:
+      apiVersion: karpenter.sh/v1
+      kind: NodePool
+      metadata:
+        name: {{ $state.nodePool.branches.name }}
+      spec:
+        template:
+          metadata:
+            labels:
+              workload-type: psql
+              sub-pool: branches
+          spec:
+            nodeClassRef:
+              group: eks.amazonaws.com
+              kind: NodeClass
+              name: {{ $state.nodePool.nodeClassName }}
+            taints:
+            - key: psql
+              value: "true"
+              effect: NoSchedule
+            - key: sub-pool
+              value: branches
+              effect: NoSchedule
+            requirements: {{ $state.nodePool.branches.requirements | toJson }}
+        limits: {{ $state.nodePool.branches.limits | toJson }}
+        disruption: {{ $state.nodePool.disruption | toJson }}
+  providerConfigRef:
+    name: {{ $state.kubernetesProviderConfigRef.name }}
+    kind: {{ $state.kubernetesProviderConfigRef.kind }}
+{{- end }}

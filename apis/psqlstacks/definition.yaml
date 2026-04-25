@@ -178,39 +178,18 @@ spec:
                         type: boolean
                         default: true
               nodePool:
-                description: Optional dedicated Karpenter NodePool for PostgreSQL workloads. When enabled, CNPG, the scale-to-zero plugin, and Atlas schedule here via nodeSelector + tolerations. (Phase 3 of the CNPG pivot will split this into branches / primary sub-pools with hugepages + nvme-tcp pre-configured.)
+                description: "Dedicated Karpenter NodePools for PostgreSQL workloads. Two sub-pools — `branches` (spot arm64 NVMe, for ephemeral PSQLBranch workloads) and `primary` (on-demand arm64 NVMe, for replicated-cow PSQLCluster primaries where spot preemption would lose a Mayastor replica). Defaults to disabled — node-side prep for Mayastor/LVM (hugepages, nvme-tcp, LVM volume groups) is a separate concern handled in phase 3b. CNPG / scale-to-zero / Atlas schedule on the primary pool when enabled."
                 type: object
                 properties:
                   enabled:
+                    description: Master toggle. When false, neither sub-pool is created. When true, each sub-pool's `enabled` controls individual creation.
                     type: boolean
                     default: false
                   nodeClassName:
-                    description: EKS NodeClass to reference. Defaults to "default".
+                    description: EKS NodeClass shared by both sub-pools. Defaults to "default".
                     type: string
-                  limits:
-                    type: object
-                    properties:
-                      cpu:
-                        type: string
-                      memory:
-                        type: string
-                  requirements:
-                    description: Karpenter scheduling requirements. Defaults to arm64 spot on r7g/m7g (memory-optimized + general-purpose Graviton).
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        key:
-                          type: string
-                        operator:
-                          type: string
-                          enum: [In, NotIn, Exists, DoesNotExist, Gt, Lt]
-                        values:
-                          type: array
-                          items:
-                            type: string
-                      required: [key, operator]
                   disruption:
+                    description: Karpenter disruption policy applied to both sub-pools.
                     type: object
                     properties:
                       consolidationPolicy:
@@ -220,6 +199,66 @@ spec:
                       consolidateAfter:
                         type: string
                         default: "60s"
+                  branches:
+                    description: Spot arm64 NVMe sub-pool for branches and dev workloads. Cost-optimized; spot preemption is acceptable because branches are ephemeral.
+                    type: object
+                    properties:
+                      enabled:
+                        type: boolean
+                        default: true
+                      limits:
+                        type: object
+                        properties:
+                          cpu:
+                            type: string
+                          memory:
+                            type: string
+                      requirements:
+                        description: Karpenter scheduling requirements. Defaults to arm64 spot on i4g.2xlarge / i4g.4xlarge / im4gn.2xlarge (NVMe instance-store, Graviton).
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            key:
+                              type: string
+                            operator:
+                              type: string
+                              enum: [In, NotIn, Exists, DoesNotExist, Gt, Lt]
+                            values:
+                              type: array
+                              items:
+                                type: string
+                          required: [key, operator]
+                  primary:
+                    description: On-demand arm64 NVMe sub-pool for replicated-cow PSQLCluster primaries. Spot preemption would lose a Mayastor replica, so on-demand is the right default for serving workloads.
+                    type: object
+                    properties:
+                      enabled:
+                        type: boolean
+                        default: true
+                      limits:
+                        type: object
+                        properties:
+                          cpu:
+                            type: string
+                          memory:
+                            type: string
+                      requirements:
+                        description: Karpenter scheduling requirements. Defaults to arm64 on-demand on i4g.2xlarge / i4g.4xlarge / im4gn.2xlarge (NVMe instance-store, Graviton).
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            key:
+                              type: string
+                            operator:
+                              type: string
+                              enum: [In, NotIn, Exists, DoesNotExist, Gt, Lt]
+                            values:
+                              type: array
+                              items:
+                                type: string
+                          required: [key, operator]
               cnpg:
                 description: Configuration for the CloudNativePG operator Helm release.
                 type: object

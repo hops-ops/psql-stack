@@ -42,8 +42,25 @@ spec:
            separately — typically already present on EKS Auto Mode or via
            another stack). Avoids Helm "ownership" conflicts when more than
            one chart bundles the same CRDs. */}}
+    {{- /* Build csi sub-dict incrementally — both nodePool and HA contribute
+           to it, so direct `set` would clobber. */}}
+    {{- $csi := dict }}
+    {{- if $state.nodePool.enabled }}
+      {{- /* Confine csi-node to NVMe nodes too — non-psql workers don't have
+             nvme_tcp loaded, so csi-node would crashloop there. */}}
+      {{- $_ := set $csi "node" (dict
+        "nodeSelector" $state.nodePool.nodeSelector
+        "tolerations" $state.nodePool.tolerations
+      ) }}
+    {{- end }}
+    {{- if $state.ha.enabled }}
+      {{- $_ := set $csi "controller" (dict "replicaCount" $state.ha.replicas) }}
+    {{- end }}
+
+    {{- /* Skip Mayastor's bundled VolumeSnapshotClass CRD install. */}}
     {{- $chartDefaults := dict
       "crds" (dict "csi" (dict "volumeSnapshots" (dict "enabled" false)))
+      "csi" $csi
     }}
     {{- if $state.nodePool.enabled }}
       {{- $_ := set $chartDefaults "io_engine" (dict
@@ -52,15 +69,8 @@ spec:
       ) }}
     {{- end }}
     {{- if $state.ha.enabled }}
-      {{- /* Mayastor's chart has many deployments. Hit the most-impactful
-             ones (agents.core, csi.controller, etcd, eventing, obs, operators.pool)
-             with replica counts. Per-component overrides are still possible
-             via spec.storage.values. */}}
-      {{- $haReplicas := $state.ha.replicas }}
-      {{- $_ := set $chartDefaults "agents" (dict "core" (dict "replicaCount" $haReplicas)) }}
-      {{- $_ := set $chartDefaults "csi" (dict "controller" (dict "replicaCount" $haReplicas)) }}
-      {{- $_ := set $chartDefaults "etcd" (dict "replicaCount" $haReplicas) }}
-      {{- /* Fields not commonly there but harmless if ignored */}}
+      {{- $_ := set $chartDefaults "agents" (dict "core" (dict "replicaCount" $state.ha.replicas)) }}
+      {{- $_ := set $chartDefaults "etcd" (dict "replicaCount" $state.ha.replicas) }}
     {{- end }}
     {{- $mergedValues := mergeOverwrite $chartDefaults ($storage.values | default dict) }}
     values:

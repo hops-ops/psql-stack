@@ -1,29 +1,36 @@
 # code: language=yaml
 #
-# Node-prep DaemonSet for Mayastor prerequisites
+# Node-prep DaemonSet for Longhorn V2 prerequisites
 #
 # Runs once per NVMe NodePool node and configures the host-level state
-# Mayastor requires (hugepages, nvme-tcp), then registers the local NVMe
-# instance-store device with Mayastor by creating a per-node DiskPool CR.
+# Longhorn V2's SPDK data engine requires, then tells Longhorn to register
+# the local NVMe instance-store device as a V2 block-mode disk by labeling
+# + annotating the K8s Node.
 #
 # Composes:
 #   - ServiceAccount + ClusterRole + ClusterRoleBinding granting the DS
-#     permission to get/create DiskPools in the mayastor namespace
+#     permission to get/patch K8s Nodes (to set Longhorn disk labels and
+#     annotations).
 #   - DaemonSet that, per node:
-#       1. Sysctls vm.nr_hugepages (required by Mayastor SPDK)
-#       2. modprobes nvme-tcp (Mayastor NVMe-oF transport)
+#       1. Sysctls vm.nr_hugepages (required by SPDK)
+#       2. modprobes nvme_tcp, vfio_pci, uio_pci_generic, ublk_drv
+#          (Longhorn V2 transports + UBLK ingress)
 #       3. Detects /dev/nvme[1-9]n1 instance-store device by lsblk model
-#       4. Creates a DiskPool CR `psql-pool-<NODE_NAME>` if not present
+#       4. Labels the K8s Node `node.longhorn.io/create-default-disk=config`
+#          and annotates `node.longhorn.io/default-disks-config=[...]` so
+#          Longhorn auto-registers the device as a V2 block-mode disk
+#          tagged `psql` (matched by the StorageClass `diskSelector: psql`).
 #
 # After the init container finishes, a tiny pause container keeps the
 # pod up so the DaemonSet reports Ready.
 #
 # Caveats:
-#   - On EKS Auto Mode (Bottlerocket OS), nvme-tcp may already be
-#     pre-loaded; modprobe inside a container may be restricted —
-#     script falls back gracefully.
-#   - Auto Mode's NodeClass doesn't support userData, so runtime
-#     allocation via this DS is currently the only path for hugepages.
+#   - On EKS Auto Mode (Bottlerocket OS), nvme_tcp is typically pre-loaded;
+#     vfio_pci / uio_pci_generic / ublk_drv may need the modprobe attempt;
+#     script falls back gracefully on each.
+#   - Auto Mode's NodeClass doesn't support userData, so runtime allocation
+#     via this DS is currently the only path for hugepages + non-default
+#     kernel modules.
 #
 
 {{- if $state.nodePrep.enabled }}
@@ -51,7 +58,7 @@ spec:
     name: {{ $state.kubernetesProviderConfigRef.name }}
     kind: {{ $state.kubernetesProviderConfigRef.kind }}
 
-# ---- ClusterRole: get/create DiskPools in mayastor namespace -------------
+# ---- ClusterRole: patch labels + annotations on K8s Nodes ----------------
 ---
 apiVersion: kubernetes.m.crossplane.io/v1alpha1
 kind: Object
@@ -70,9 +77,9 @@ spec:
         name: psql-node-prep
         labels: {{ $state.labels | toJson }}
       rules:
-      - apiGroups: ["openebs.io"]
-        resources: ["diskpools"]
-        verbs: ["get", "create", "list", "watch"]
+      - apiGroups: [""]
+        resources: ["nodes"]
+        verbs: ["get", "patch", "update"]
   providerConfigRef:
     name: {{ $state.kubernetesProviderConfigRef.name }}
     kind: {{ $state.kubernetesProviderConfigRef.kind }}
@@ -160,8 +167,6 @@ spec:
                 valueFrom:
                   fieldRef:
                     fieldPath: spec.nodeName
-              - name: MAYASTOR_NS
-                value: {{ $state.storage.namespace | quote }}
               command:
               - /bin/sh
               - -c
@@ -172,7 +177,7 @@ spec:
                   apk add --no-cache util-linux curl kubectl
                 fi
 
-                # ---- Hugepages (Mayastor SPDK requires) ----
+                # ---- Hugepages (SPDK requires) ----
                 echo "Setting vm.nr_hugepages={{ $state.nodePrep.hugepages.count }}"
                 if [ -w /proc/sys/vm/nr_hugepages ]; then
                   echo {{ $state.nodePrep.hugepages.count }} > /proc/sys/vm/nr_hugepages
@@ -180,39 +185,31 @@ spec:
                   echo "WARN: /proc/sys/vm/nr_hugepages not writable; allocate manually"
                 fi
 
-                # ---- nvme-tcp module ----
-                if lsmod 2>/dev/null | grep -q "^nvme_tcp"; then
-                  echo "nvme-tcp already loaded"
-                else
-                  echo "Attempting modprobe nvme-tcp"
-                  modprobe nvme-tcp 2>/dev/null \
-                    || nsenter -t 1 -m modprobe nvme-tcp 2>/dev/null \
-                    || echo "WARN: could not load nvme-tcp; verify on host (Bottlerocket may pre-load it)"
-                fi
+                # ---- Kernel modules required by Longhorn V2 ----
+                for mod in nvme_tcp vfio_pci uio_pci_generic ublk_drv; do
+                  if lsmod 2>/dev/null | grep -q "^${mod}"; then
+                    echo "${mod} already loaded"
+                  else
+                    echo "Attempting modprobe ${mod}"
+                    modprobe ${mod} 2>/dev/null \
+                      || nsenter -t 1 -m modprobe ${mod} 2>/dev/null \
+                      || echo "WARN: could not load ${mod} (Bottlerocket may not ship it; verify on host)"
+                  fi
+                done
 
-                # ---- Register Mayastor DiskPool for this node ----
+                # ---- Register the local NVMe instance-store device as a
+                #      Longhorn V2 block-mode disk via Node label + annotation
                 DEVICE=$(lsblk -dno NAME,TYPE,MODEL 2>/dev/null \
                   | awk '$2=="disk" && /Amazon EC2 NVMe Instance Storage/ {print "/dev/"$1; exit}')
                 if [ -z "$DEVICE" ]; then
-                  echo "WARN: no instance-store NVMe device on $NODE_NAME; skipping DiskPool"
+                  echo "WARN: no instance-store NVMe device on $NODE_NAME; skipping disk registration"
                 else
-                  POOL_NAME="psql-pool-${NODE_NAME}"
-                  if kubectl get diskpool -n "$MAYASTOR_NS" "$POOL_NAME" >/dev/null 2>&1; then
-                    echo "DiskPool $POOL_NAME already exists"
-                  else
-                    echo "Creating DiskPool $POOL_NAME on $NODE_NAME ($DEVICE)"
-                    cat <<EOF | kubectl apply -f -
-                apiVersion: openebs.io/v1beta3
-                kind: DiskPool
-                metadata:
-                  name: ${POOL_NAME}
-                  namespace: ${MAYASTOR_NS}
-                spec:
-                  node: ${NODE_NAME}
-                  disks:
-                    - ${DEVICE}
-                EOF
-                  fi
+                  echo "Registering Longhorn V2 disk for $NODE_NAME ($DEVICE)"
+                  DISKS_JSON='[{"path":"'"${DEVICE}"'","diskType":"block","name":"nvme-block-pool","tags":["psql"],"allowScheduling":true,"storageReserved":0}]'
+                  kubectl label node "$NODE_NAME" \
+                    node.longhorn.io/create-default-disk=config --overwrite
+                  kubectl annotate node "$NODE_NAME" \
+                    "node.longhorn.io/default-disks-config=${DISKS_JSON}" --overwrite
                 fi
 
                 echo "node-prep complete"

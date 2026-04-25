@@ -13,7 +13,7 @@ import models.k8s.apimachinery.pkg.apis.meta.v1 as metav1
 _items = [
     # ==========================================================================
     # Test 1: minimal claim renders the platform operators (CNPG, Atlas), the
-    # scale-to-zero plugin (default-on), Mayastor + StorageClass + node-prep +
+    # scale-to-zero plugin (default-on), Longhorn + StorageClass + node-prep +
     # both NodePool sub-pools (nodePool default-on now — stack's whole point).
     # ==========================================================================
     metav1alpha1.CompositionTest {
@@ -41,17 +41,17 @@ _items = [
                 {
                     apiVersion = "helm.m.crossplane.io/v1beta1"
                     kind = "Release"
-                    metadata.name = "openebs-mayastor"
+                    metadata.name = "longhorn"
                 }
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                     kind = "Object"
-                    metadata.name = "test-psql-storageclass-mayastor"
+                    metadata.name = "test-psql-storageclass-longhorn"
                 }
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                     kind = "Object"
-                    metadata.name = "test-psql-volumesnapshotclass-mayastor"
+                    metadata.name = "test-psql-volumesnapshotclass-longhorn"
                 }
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -335,14 +335,14 @@ _items = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                     kind = "Object"
-                    metadata.name = "no-s2z-storageclass-mayastor"
+                    metadata.name = "no-s2z-storageclass-longhorn"
                 }
             ]
         }
     }
 
     # ==========================================================================
-    # Test 9: nodePool.enabled=false skips Mayastor, StorageClass, and node-prep
+    # Test 9: nodePool.enabled=false skips Longhorn, StorageClass, and node-prep
     # (the stack's storage requires the NodePool to have something to schedule
     # on — disabling the NodePool reasonably skips everything that needs it).
     # ==========================================================================
@@ -412,8 +412,8 @@ _items = [
     }
 
     # ==========================================================================
-    # Test 10: spec.storage settings flow through to the StorageClass
-    # parameters (replicationFactor, thin)
+    # Test 10: spec.storage.replicationFactor flows through to the Longhorn
+    # StorageClass parameters (numberOfReplicas).
     # ==========================================================================
     metav1alpha1.CompositionTest {
         metadata.name = "storage-settings-flow-through-to-sc"
@@ -428,7 +428,6 @@ _items = [
                     clusterName = "my-cluster"
                     storage = {
                         replicationFactor = 1
-                        thin = False
                     }
                 }
             }
@@ -436,13 +435,13 @@ _items = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                     kind = "Object"
-                    metadata.name = "storage-tweaks-storageclass-mayastor"
+                    metadata.name = "storage-tweaks-storageclass-longhorn"
                     spec.forProvider.manifest.parameters = {
-                        repl = "1"
-                        protocol = "nvmf"
-                        thin = "false"
-                        ioTimeout = "60"
+                        dataEngine = "v2"
+                        numberOfReplicas = "1"
+                        staleReplicaTimeout = "30"
                         fsType = "ext4"
+                        diskSelector = "psql"
                     }
                 }
             ]

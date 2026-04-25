@@ -10,7 +10,7 @@
 # ==============================================================================
 
 {{- $checkReady := dict }}
-{{- range $key := list "cnpg-operator" "cnpg-scale-to-zero" "atlas-operator" "nodepool-branches" "nodepool-primary" "node-prep" "openebs-mayastor" "storageclass-mayastor" }}
+{{- range $key := list "cnpg-operator" "cnpg-scale-to-zero" "atlas-operator" "nodepool-branches" "nodepool-primary" "node-prep" "longhorn" "storageclass-longhorn" }}
   {{- $entry := get $observed $key | default dict }}
   {{- $resource := $entry.resource | default dict }}
   {{- $status := $resource.status | default dict }}
@@ -33,8 +33,8 @@
   "nodepoolBranches" (dict "ready" (get $checkReady "nodepool-branches"))
   "nodepoolPrimary" (dict "ready" (get $checkReady "nodepool-primary"))
   "nodePrep" (dict "ready" (get $checkReady "node-prep"))
-  "mayastor" (dict "ready" (get $checkReady "openebs-mayastor"))
-  "storageClass" (dict "ready" (get $checkReady "storageclass-mayastor"))
+  "longhorn" (dict "ready" (get $checkReady "longhorn"))
+  "storageClass" (dict "ready" (get $checkReady "storageclass-longhorn"))
 ) }}
 
 # ==============================================================================

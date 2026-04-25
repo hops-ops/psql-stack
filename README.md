@@ -1,22 +1,24 @@
 # psql-stack
 
-PostgreSQL platform stack on top of [CloudNativePG](https://cloudnative-pg.io/) with [OpenEBS Mayastor](https://github.com/openebs/mayastor) for replicated NVMe-oF storage. Installs the operator, the [`cnpg-i-scale-to-zero` plugin](https://github.com/xataio/cnpg-i-scale-to-zero), Atlas Operator (schema migrations), Mayastor + matching StorageClass + VolumeSnapshotClass, two Karpenter NodePools, and a node-prep DaemonSet.
+PostgreSQL platform stack on top of [CloudNativePG](https://cloudnative-pg.io/) with [Longhorn](https://github.com/longhorn/longhorn) (V2 data engine — SPDK + NVMe-oF) for replicated CoW storage. Installs the operator, the [`cnpg-i-scale-to-zero` plugin](https://github.com/xataio/cnpg-i-scale-to-zero), Atlas Operator (schema migrations), Longhorn + matching StorageClass + VolumeSnapshotClass, two Karpenter NodePools, and a node-prep DaemonSet.
+
+> **Storage status**: Longhorn V2 is "Experimental" upstream as of Longhorn 1.10. V1 (iSCSI) is GA but not used here — V2 was chosen for SPDK performance parity with Mayastor without Mayastor's heavy footprint. Track promotion to GA before high-stakes production use, or override `spec.storage.values.defaultSettings.v2DataEngine: false` to fall back to V1.
 
 This is the **platform layer** — it does not create any serving Postgres clusters. Per-app DBs live in [`PSQLCluster`](../../psql-cluster/) (separate XR), ephemeral forks in [`PSQLBranch`](../../psql-branch/) (separate XR).
 
 ## Why psql-stack?
 
 **Without psql-stack:**
-- Manual Helm installs of CNPG, Atlas, Mayastor on every cluster
+- Manual Helm installs of CNPG, Atlas, Longhorn on every cluster
 - No deletion ordering — removing CNPG before Atlas can leave migrations dangling
-- No node-side prep for Mayastor (hugepages + `nvme-tcp` module need to exist before the IO engine pods will run)
+- No node-side prep for Longhorn V2 (hugepages + `nvme_tcp` / `vfio_pci` / `uio_pci_generic` / `ublk_drv` kernel modules need to exist before the SPDK instance-manager pods will run)
 - No declarative substrate for the `cnpg-i-scale-to-zero` plugin (cert-manager-backed gRPC TLS, ServiceAccount + RBAC, sidecar config)
 
 **With psql-stack:**
-- Single claim deploys CNPG + S2Z plugin + Atlas + Mayastor + StorageClass with production defaults
+- Single claim deploys CNPG + S2Z plugin + Atlas + Longhorn + StorageClass with production defaults
 - Deletion order enforced via `protection.crossplane.io/Usage` resources
-- Replicated NVMe-oF CoW storage — `replicationFactor: 3` for primaries, `replicationFactor: 1` for ephemeral branches (per-PVC override). Single backend covers both uses.
-- Dedicated Karpenter NodePools (`branches` spot, `primary` on-demand) targeting NVMe instance-store nodes (`i4g.2xlarge` / `i4g.4xlarge` / `im4gn.2xlarge` arm64 Graviton)
+- Replicated SPDK / NVMe-oF CoW storage — `replicationFactor: 3` for primaries, `replicationFactor: 1` for ephemeral branches (per-PVC override). Single backend covers both uses.
+- Dedicated Karpenter NodePools (both spot — Longhorn replication absorbs preemption) targeting NVMe instance-store nodes (`i4g.2xlarge` / `i4g.4xlarge` / `im4gn.2xlarge` arm64 Graviton)
 - Pinnable upstream chart / plugin versions; Renovate keeps them current
 
 ## Components
@@ -26,10 +28,10 @@ This is the **platform layer** — it does not create any serving Postgres clust
 | **CNPG operator** | always-on | The CNCF Postgres operator. CRDs include `Cluster`, `Backup`, `Pooler`, `ScheduledBackup`. |
 | **cnpg-i-scale-to-zero plugin** | on (`spec.scaleToZeroPlugin.enabled: true`) | Auto-hibernates idle CNPG `Cluster`s. Pinnable via `spec.scaleToZeroPlugin.version`. **Requires cert-manager** (provided by [`aws-cert-stack`](../../aws/cert/)). |
 | **Atlas operator** | always-on | Declarative schema migrations via `AtlasMigration` / `AtlasSchema` CRDs. |
-| **HA mode** | off (`spec.ha.enabled: false`) | When enabled: 3 replicas of every HA-able platform component + `topologySpreadConstraints` by zone. Affects CNPG operator, Atlas, S2Z plugin, Mayastor control plane. |
-| **Karpenter NodePools** | on (`spec.nodePool.enabled: true`) | `branches` (spot arm64 NVMe) and `primary` (on-demand arm64 NVMe). |
-| **OpenEBS Mayastor** | on when `nodePool.enabled` | Replicated NVMe-oF storage with CoW snapshots. Single `psql` StorageClass + matching VolumeSnapshotClass. |
-| **node-prep DaemonSet** | on when `nodePool.enabled` | Configures hugepages + loads `nvme-tcp` kernel module on each NVMe node (Mayastor prereqs). |
+| **HA mode** | off (`spec.ha.enabled: false`) | When enabled: 3 replicas of every HA-able platform component + `topologySpreadConstraints` by zone. Affects CNPG operator, Atlas, S2Z plugin, Longhorn CSI controllers + UI. |
+| **Karpenter NodePools** | on (`spec.nodePool.enabled: true`) | `branches` (spot arm64 NVMe) and `primary` (spot arm64 NVMe — Longhorn replication absorbs preemption). |
+| **Longhorn (V2)** | on when `nodePool.enabled` | Replicated SPDK / NVMe-oF storage with CoW snapshots. Single `psql` StorageClass + matching VolumeSnapshotClass. Longhorn keeps state in CRDs — no bundled etcd / NATS / minio. |
+| **node-prep DaemonSet** | on when `nodePool.enabled` | Configures hugepages + loads `nvme_tcp` / `vfio_pci` / `uio_pci_generic` / `ublk_drv` kernel modules on each NVMe node (Longhorn V2 prereqs); annotates the K8s Node so Longhorn auto-registers the local instance-store device as a V2 block-mode disk tagged `psql`. |
 
 ## Prerequisites
 
@@ -40,7 +42,7 @@ This is the **platform layer** — it does not create any serving Postgres clust
 
 ### Stage 1: Default install
 
-Deploy with all defaults: CNPG + Atlas + S2Z plugin + Mayastor + dedicated NodePools. Karpenter provisions NVMe instance-store nodes when something requests them.
+Deploy with all defaults: CNPG + Atlas + S2Z plugin + Longhorn + dedicated NodePools. Karpenter provisions NVMe instance-store nodes when something requests them.
 
 ```yaml
 apiVersion: hops.ops.com.ai/v1alpha1
@@ -83,7 +85,7 @@ spec:
 
 ### Stage 3: Local / no-NVMe clusters
 
-For kind / k3d / clusters that can't run Mayastor, disable the NodePool. The stack then ships only CNPG + Atlas + S2Z plugin, and your PSQLClusters target whatever StorageClass the cluster provides.
+For kind / k3d / clusters that can't run Longhorn V2, disable the NodePool. The stack then ships only CNPG + Atlas + S2Z plugin, and your PSQLClusters target whatever StorageClass the cluster provides.
 
 ```yaml
 apiVersion: hops.ops.com.ai/v1alpha1
@@ -130,28 +132,28 @@ spec:
 | `ha.replicas` | int | `3` | Replica count for HA-able platform components |
 | `ha.topologySpreadByZone` | bool | `true` | Add topologySpreadConstraint with topologyKey=topology.kubernetes.io/zone, maxSkew=1, whenUnsatisfiable=ScheduleAnyway |
 | **NodePool** | | | |
-| `nodePool.enabled` | bool | `true` | Master toggle. When false, Mayastor + StorageClass + node-prep are skipped too. |
+| `nodePool.enabled` | bool | `true` | Master toggle. When false, Longhorn + StorageClass + node-prep are skipped too. |
 | `nodePool.nodeClassName` | string | `default` | EKS NodeClass referenced by both sub-pools |
 | `nodePool.disruption.consolidationPolicy` | enum | `WhenEmptyOrUnderutilized` | Karpenter consolidation policy |
 | `nodePool.disruption.consolidateAfter` | string | `60s` | Consolidation delay |
 | `nodePool.branches.enabled` | bool | `true` | Spot arm64 NVMe sub-pool |
 | `nodePool.branches.limits` | object | `{cpu: "32", memory: "128Gi"}` | Sub-pool limits |
 | `nodePool.branches.requirements` | array | arm64 spot `i4g.2xlarge`/`i4g.4xlarge`/`im4gn.2xlarge` | Karpenter requirements |
-| `nodePool.primary.enabled` | bool | `true` | On-demand arm64 NVMe sub-pool |
+| `nodePool.primary.enabled` | bool | `true` | Spot arm64 NVMe sub-pool |
 | `nodePool.primary.limits` | object | `{cpu: "32", memory: "128Gi"}` | Sub-pool limits |
-| `nodePool.primary.requirements` | array | arm64 on-demand `i4g.2xlarge`/`i4g.4xlarge`/`im4gn.2xlarge` | Karpenter requirements |
-| **Storage (Mayastor)** | | | |
-| `storage.chartVersion` | string | `2.10.0` | Mayastor Helm chart version |
-| `storage.namespace` | string | `mayastor` | Helm release namespace |
+| `nodePool.primary.requirements` | array | arm64 spot `i4g.2xlarge`/`i4g.4xlarge`/`im4gn.2xlarge` | Karpenter requirements |
+| **Storage (Longhorn V2)** | | | |
+| `storage.chartVersion` | string | `1.10.0` | Longhorn Helm chart version |
+| `storage.namespace` | string | `longhorn-system` | Helm release namespace |
 | `storage.storageClassName` | string | `psql` | StorageClass name |
-| `storage.replicationFactor` | int | `3` | Default replicas per volume (per-PVC override via parameters) |
-| `storage.thin` | bool | `true` | Thin-provisioning (CoW) |
+| `storage.replicationFactor` | int | `3` | Default replicas per volume (`numberOfReplicas` parameter on the SC) |
+| `storage.thin` | bool | `true` | Thin-provisioning (CoW). Longhorn V2 is CoW by default; the flag is exposed for symmetry but is essentially always true under V2. |
 | `storage.values` | object | — | Helm values merged with chart defaults |
 | `storage.overrideAllValues` | object | — | Helm values that replace all defaults |
 | **Node prep** | | | |
 | `nodePrep.enabled` | bool | `true` (when `nodePool.enabled`) | Compose the privileged DaemonSet |
-| `nodePrep.hugepages.count` | int | `1024` | Number of 2MiB hugepages per node |
-| `nodePrep.image` | string | `alpine:3.20` | Init container image (apk-install at runtime) |
+| `nodePrep.hugepages.count` | int | `1024` | Number of 2MiB hugepages per node (Longhorn V2 SPDK requires) |
+| `nodePrep.image` | string | `alpine:3.20` | Init container image (apk-install kubectl + util-linux at runtime) |
 
 ## Composed Resources
 
@@ -160,9 +162,9 @@ spec:
 | `cloudnative-pg` | `helm.m.crossplane.io/Release` | always |
 | `atlas-operator` | `helm.m.crossplane.io/Release` | always |
 | 9× `<name>-s2z-*` | `kubernetes.m.crossplane.io/Object` | `scaleToZeroPlugin.enabled: true` (default) |
-| `openebs-mayastor` | `helm.m.crossplane.io/Release` | `nodePool.enabled: true` (default) |
-| `<name>-storageclass-mayastor` | `kubernetes.m.crossplane.io/Object` | `nodePool.enabled: true` |
-| `<name>-volumesnapshotclass-mayastor` | `kubernetes.m.crossplane.io/Object` | `nodePool.enabled: true` |
+| `longhorn` | `helm.m.crossplane.io/Release` | `nodePool.enabled: true` (default) |
+| `<name>-storageclass-longhorn` | `kubernetes.m.crossplane.io/Object` | `nodePool.enabled: true` |
+| `<name>-volumesnapshotclass-longhorn` | `kubernetes.m.crossplane.io/Object` | `nodePool.enabled: true` |
 | `<name>-nodepool-branches` | `kubernetes.m.crossplane.io/Object` | `nodePool.enabled && nodePool.branches.enabled` |
 | `<name>-nodepool-primary` | `kubernetes.m.crossplane.io/Object` | `nodePool.enabled && nodePool.primary.enabled` |
 | `<name>-node-prep` | `kubernetes.m.crossplane.io/Object` (DaemonSet) | `nodePool.enabled && nodePrep.enabled` |

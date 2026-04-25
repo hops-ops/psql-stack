@@ -1,0 +1,103 @@
+# code: language=yaml
+#
+# Helm Release: Longhorn (V2 Data Engine — SPDK + NVMe-oF)
+#
+# Provides replicated CoW storage via Longhorn's V2 data engine, which uses
+# SPDK userspace NVMe-oF instead of V1's kernel iSCSI. Comparable performance
+# to OpenEBS Mayastor with a meaningfully lighter footprint (no bundled
+# etcd/NATS/minio/loki/alloy — Longhorn keeps state in CRDs).
+#
+# Node-side prerequisites (provided by phase 3's NodePool config + node-prep DS):
+#   - 2MiB hugepages (`vm.nr_hugepages=1024` minimum)
+#   - kernel modules: `nvme_tcp`, `vfio_pci`, `uio_pci_generic`, `ublk_drv`
+#   - Local NVMe instance-store devices for V2 block-mode disks
+#
+# Status: Longhorn V2 is "Experimental" upstream as of Longhorn 1.10.
+# Track promotion to GA via https://longhorn.io/docs/<version>/v2-data-engine/
+#
+# Chart: https://charts.longhorn.io (chart name: longhorn)
+# Upstream: https://github.com/longhorn/longhorn
+#
+
+{{- $storage := $state.storage }}
+{{- if $state.nodePool.enabled }}
+---
+apiVersion: helm.m.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: longhorn
+  annotations:
+    {{ setResourceNameAnnotation "longhorn" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    chart:
+      name: longhorn
+      repository: https://charts.longhorn.io
+      version: {{ $storage.chartVersion | quote }}
+    namespace: {{ $storage.namespace }}
+    {{- if $storage.overrideAllValues }}
+    values:
+      {{- toYaml $storage.overrideAllValues | nindent 6 }}
+    {{- else }}
+    {{- /* Build defaultSettings — V2 data engine + replication defaults. */}}
+    {{- $defaultSettings := dict
+      "v2DataEngine" true
+      "v2DataEngineHugepageLimit" "2048"
+      "defaultReplicaCount" $storage.replicationFactor
+      "defaultDataLocality" "best-effort"
+      "staleReplicaTimeout" 30
+      "createDefaultDiskLabeledNodes" true
+    }}
+
+    {{- /* Confine Longhorn components to NVMe nodes. Longhorn manager and
+           instance-manager are DaemonSets; csi components are Deployments.
+           All ride workload-type=psql nodes only. */}}
+    {{- $nodeSelector := dict }}
+    {{- $tolerations := list }}
+    {{- if $state.nodePool.enabled }}
+      {{- $nodeSelector = $state.nodePool.nodeSelector }}
+      {{- $tolerations = $state.nodePool.tolerations }}
+    {{- end }}
+
+    {{- /* Helm chart structure: longhornManager, longhornDriver, longhornUI,
+           csi all accept tolerations + nodeSelector via top-level keys. */}}
+    {{- $chartDefaults := dict
+      "defaultSettings" $defaultSettings
+      "longhornManager" (dict
+        "tolerations" $tolerations
+        "nodeSelector" $nodeSelector
+      )
+      "longhornDriver" (dict
+        "tolerations" $tolerations
+        "nodeSelector" $nodeSelector
+      )
+      "longhornUI" (dict
+        "tolerations" $tolerations
+        "nodeSelector" $nodeSelector
+      )
+    }}
+
+    {{- if $state.ha.enabled }}
+      {{- /* HA: bump CSI controller + UI replicas. Longhorn manager runs as
+             a DaemonSet on every workload-type=psql node, so replica count
+             scales with the NodePool, not this knob. */}}
+      {{- $_ := set $chartDefaults "longhornUI" (mergeOverwrite (get $chartDefaults "longhornUI") (dict "replicas" $state.ha.replicas)) }}
+      {{- $_ := set $chartDefaults "csi" (dict
+        "attacherReplicaCount" $state.ha.replicas
+        "provisionerReplicaCount" $state.ha.replicas
+        "resizerReplicaCount" $state.ha.replicas
+        "snapshotterReplicaCount" $state.ha.replicas
+      ) }}
+    {{- end }}
+
+    {{- $mergedValues := mergeOverwrite $chartDefaults ($storage.values | default dict) }}
+    values:
+      {{- toYaml $mergedValues | nindent 6 }}
+    {{- end }}
+  rollbackLimit: 3
+  providerConfigRef:
+    name: {{ $state.helmProviderConfigRef.name }}
+    kind: {{ $state.helmProviderConfigRef.kind }}
+{{- end }}

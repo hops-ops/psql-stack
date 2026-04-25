@@ -1,8 +1,8 @@
-# Local: NodePool / Mayastor disabled — gets just CNPG + Atlas + S2Z plugin
+# Local: NodePool / Longhorn disabled — gets just CNPG + Atlas + S2Z plugin
 # installed on whatever StorageClass already exists on the local cluster.
 #
-# Useful for kind / k3d dev clusters that can't run Mayastor.
-# PSQLClusters on this stack will need to specify a non-Mayastor SC
+# Useful for kind / k3d dev clusters that can't run Longhorn V2.
+# PSQLClusters on this stack will need to specify a non-Longhorn SC
 # (`spec.storage.class: standard` for k3d, etc.).
 #
 apiVersion: hops.ops.com.ai/v1alpha1

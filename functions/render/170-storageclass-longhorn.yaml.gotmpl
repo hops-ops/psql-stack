@@ -1,10 +1,12 @@
 # code: language=yaml
 #
-# StorageClass + VolumeSnapshotClass — Mayastor (replicated CoW)
+# StorageClass + VolumeSnapshotClass — Longhorn V2 (replicated CoW)
 #
-# The stack's only StorageClass. Replicated NVMe-oF, thin-provisioned by
-# default. PSQLClusters that don't want CoW can target a different SC the
-# cluster already provides; the stack doesn't compose a non-CoW SC.
+# The stack's only StorageClass. Backed by Longhorn V2's SPDK data engine
+# over NVMe-oF (TCP transport). Replicated by default
+# (numberOfReplicas = $storage.replicationFactor); thin-provisioned by default.
+# PSQLClusters that don't want CoW can target a different SC the cluster
+# already provides; the stack doesn't compose a non-CoW SC.
 #
 
 {{- $storage := $state.storage }}
@@ -13,9 +15,9 @@
 apiVersion: kubernetes.m.crossplane.io/v1alpha1
 kind: Object
 metadata:
-  name: {{ $state.name }}-storageclass-mayastor
+  name: {{ $state.name }}-storageclass-longhorn
   annotations:
-    {{ setResourceNameAnnotation "storageclass-mayastor" }}
+    {{ setResourceNameAnnotation "storageclass-longhorn" }}
   labels: {{ $state.labels | toJson }}
 spec:
   managementPolicies: {{ $state.managementPolicies | toJson }}
@@ -26,13 +28,13 @@ spec:
       metadata:
         name: {{ $storage.storageClassName }}
         labels: {{ $state.labels | toJson }}
-      provisioner: io.openebs.csi-mayastor
+      provisioner: driver.longhorn.io
       parameters:
-        repl: "{{ $storage.replicationFactor }}"
-        protocol: nvmf
-        thin: "{{ $storage.thin }}"
-        ioTimeout: "60"
-        fsType: ext4
+        dataEngine: "v2"
+        numberOfReplicas: "{{ $storage.replicationFactor }}"
+        staleReplicaTimeout: "30"
+        fsType: "ext4"
+        diskSelector: "psql"
       reclaimPolicy: {{ $storage.reclaimPolicy }}
       volumeBindingMode: {{ $storage.volumeBindingMode }}
       allowVolumeExpansion: {{ $storage.allowVolumeExpansion }}
@@ -43,9 +45,9 @@ spec:
 apiVersion: kubernetes.m.crossplane.io/v1alpha1
 kind: Object
 metadata:
-  name: {{ $state.name }}-volumesnapshotclass-mayastor
+  name: {{ $state.name }}-volumesnapshotclass-longhorn
   annotations:
-    {{ setResourceNameAnnotation "volumesnapshotclass-mayastor" }}
+    {{ setResourceNameAnnotation "volumesnapshotclass-longhorn" }}
   labels: {{ $state.labels | toJson }}
 spec:
   managementPolicies: {{ $state.managementPolicies | toJson }}
@@ -56,8 +58,10 @@ spec:
       metadata:
         name: {{ $storage.storageClassName }}
         labels: {{ $state.labels | toJson }}
-      driver: io.openebs.csi-mayastor
+      driver: driver.longhorn.io
       deletionPolicy: Delete
+      parameters:
+        type: snap
   providerConfigRef:
     name: {{ $state.kubernetesProviderConfigRef.name }}
     kind: {{ $state.kubernetesProviderConfigRef.kind }}

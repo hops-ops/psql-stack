@@ -37,12 +37,14 @@
 }}
 
 # ==============================================================================
-# Storage — OpenEBS Mayastor (replicated NVMe-oF + CoW)
+# Storage — Longhorn V2 (replicated SPDK + NVMe-oF + CoW)
 # Single backend; per-PVC cost is controlled via replicationFactor. Requires
-# NVMe instance-store nodes (NodePool block) plus hugepages + nvme-tcp module
-# (node-prep DaemonSet). PSQLClusters that don't want CoW can target any other
-# StorageClass that exists on the cluster (e.g., the default gp3 SC) — the
-# stack doesn't compose a non-CoW SC itself.
+# NVMe instance-store nodes (NodePool block) plus hugepages + nvme_tcp /
+# vfio_pci / uio_pci_generic / ublk_drv modules (node-prep DaemonSet).
+# Longhorn V2 is Experimental upstream as of Longhorn 1.10.
+# PSQLClusters that don't want CoW can target any other StorageClass that
+# exists on the cluster (e.g., the default gp3 SC) — the stack doesn't
+# compose a non-CoW SC itself.
 # ==============================================================================
 {{- $storageSpec := $spec.storage | default dict }}
 {{- $thin := true }}
@@ -54,8 +56,8 @@
   {{- $allowVolumeExpansion = $storageSpec.allowVolumeExpansion }}
 {{- end }}
 {{- $storage := dict
-  "chartVersion" ($storageSpec.chartVersion | default "2.10.0")
-  "namespace" ($storageSpec.namespace | default "mayastor")
+  "chartVersion" ($storageSpec.chartVersion | default "1.10.0")
+  "namespace" ($storageSpec.namespace | default "longhorn-system")
   "storageClassName" ($storageSpec.storageClassName | default "psql")
   "replicationFactor" ($storageSpec.replicationFactor | default 3)
   "thin" $thin
@@ -100,8 +102,9 @@
   (dict "key" "node.kubernetes.io/instance-type" "operator" "In" "values" $nvmeInstanceTypes)
 ) }}
 
-# primary sub-pool (spot by default — Mayastor's replication absorbs preemption;
-# losing one replica of three triggers a rebuild on a fresh node, not data loss)
+# primary sub-pool (spot by default — Longhorn V2's replication absorbs
+# preemption; losing one replica of three triggers a rebuild on a fresh
+# node, not data loss)
 {{- $primarySpec := $nodePoolSpec.primary | default dict }}
 {{- $primaryEnabled := true }}
 {{- if hasKey $primarySpec "enabled" }}
@@ -127,7 +130,10 @@
 {{- end }}
 
 # ==============================================================================
-# Node prep — hugepages + nvme-tcp module on NVMe nodes (Mayastor prereqs)
+# Node prep — hugepages + nvme_tcp / vfio_pci / uio_pci_generic / ublk_drv
+# kernel modules on NVMe nodes (Longhorn V2 prereqs); also annotates the
+# K8s Node with node.longhorn.io/default-disks-config so Longhorn registers
+# the local NVMe instance-store device as a V2 block-mode disk.
 # Auto-gated: emitted when nodePool.enabled (no nodes → DS no-op anyway)
 # ==============================================================================
 {{- $nodePrepSpec := $spec.nodePrep | default dict }}

@@ -67,14 +67,14 @@ spec:
                 description: Shared namespace for CNPG operator, scale-to-zero plugin, and Atlas operator. Defaults to cnpg-system. Per-component namespace overrides this.
                 type: string
               storage:
-                description: "Storage backend (OpenEBS Mayastor — replicated NVMe-oF with CoW snapshots). The stack is opinionated: it ships exactly one storage backend, sized for CoW + HA. Per-cluster cost is controlled via replicationFactor (3 for primaries, 1 for ephemeral branches). Requires NVMe instance-store nodes (provided by the NodePool block) plus hugepages and the nvme-tcp kernel module (provided by the node-prep DaemonSet). For non-CoW workloads, PSQLCluster claims can target any other StorageClass that exists on the target cluster (e.g., the cluster's default gp3 SC) — no need for the stack to compose that."
+                description: "Storage backend (Longhorn V2 — SPDK + NVMe-oF with replicated CoW snapshots). The stack is opinionated: it ships exactly one storage backend, sized for CoW + HA. Per-cluster cost is controlled via replicationFactor (3 for primaries, 1 for ephemeral branches). Requires NVMe instance-store nodes (provided by the NodePool block) plus hugepages and the nvme_tcp / vfio_pci / uio_pci_generic / ublk_drv kernel modules (provided by the node-prep DaemonSet). Longhorn V2 is marked Experimental upstream (Longhorn 1.10) — track promotion to GA before high-stakes production use. For non-CoW workloads, PSQLCluster claims can target any other StorageClass that exists on the target cluster (e.g., the cluster's default gp3 SC) — no need for the stack to compose that."
                 type: object
                 properties:
                   chartVersion:
-                    description: Mayastor Helm chart version. Defaults to 2.10.0.
+                    description: Longhorn Helm chart version. Defaults to 1.10.0.
                     type: string
                   namespace:
-                    description: Namespace for the Mayastor install. Defaults to mayastor.
+                    description: Namespace for the Longhorn install. Defaults to longhorn-system.
                     type: string
                   storageClassName:
                     description: StorageClass name. Defaults to "psql".
@@ -105,7 +105,7 @@ spec:
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
               nodePool:
-                description: "Dedicated Karpenter NodePools for PostgreSQL workloads. Two sub-pools — `branches` (spot arm64 NVMe, for ephemeral PSQLBranch workloads) and `primary` (on-demand arm64 NVMe, for replicated-cow PSQLCluster primaries where spot preemption would lose a Mayastor replica). Defaults to disabled — node-side prep for Mayastor/LVM (hugepages, nvme-tcp, LVM volume groups) is a separate concern handled in phase 3b. CNPG / scale-to-zero / Atlas schedule on the primary pool when enabled."
+                description: "Dedicated Karpenter NodePools for PostgreSQL workloads. Two sub-pools — `branches` (spot arm64 NVMe, for ephemeral PSQLBranch workloads) and `primary` (spot arm64 NVMe, for replicated-CoW PSQLCluster primaries — Longhorn V2 replication absorbs spot preemption). Defaults to enabled — node-side prep for Longhorn V2 (hugepages + nvme_tcp / vfio_pci / uio_pci_generic / ublk_drv) is composed automatically by the node-prep DaemonSet. CNPG / scale-to-zero / Atlas schedule on the primary pool when enabled."
                 type: object
                 properties:
                   enabled:
@@ -157,7 +157,7 @@ spec:
                                 type: string
                           required: [key, operator]
                   primary:
-                    description: "Spot arm64 NVMe sub-pool for PSQLCluster primaries. Mayastor's replicationFactor=3 absorbs spot preemption — losing one replica triggers a rebuild on a fresh node, not data loss. Override capacity-type to on-demand via spec.nodePool.primary.requirements if your durability requirements rule out preemption."
+                    description: "Spot arm64 NVMe sub-pool for PSQLCluster primaries. Longhorn V2's replicationFactor=3 absorbs spot preemption — losing one replica triggers a rebuild on a fresh node, not data loss. Override capacity-type to on-demand via spec.nodePool.primary.requirements if your durability requirements rule out preemption."
                     type: object
                     properties:
                       enabled:
@@ -187,25 +187,25 @@ spec:
                                 type: string
                           required: [key, operator]
               nodePrep:
-                description: "Node-prep DaemonSet for Mayastor prerequisites. Runs as a privileged init container on each NVMe NodePool node and configures hugepages (vm.nr_hugepages, required by Mayastor SPDK) plus loads the nvme-tcp kernel module (Mayastor's NVMe-oF transport). Composed when nodePool.enabled. EKS Auto Mode / Bottlerocket may pre-load nvme-tcp; verify with `lsmod | grep nvme_tcp` before assuming the modprobe step is needed."
+                description: "Node-prep DaemonSet for Longhorn V2 prerequisites. Runs as a privileged init container on each NVMe NodePool node and configures hugepages (vm.nr_hugepages, required by SPDK) plus loads the nvme_tcp / vfio_pci / uio_pci_generic / ublk_drv kernel modules (Longhorn V2 NVMe-oF + UBLK transports). Also annotates the K8s Node with `node.longhorn.io/default-disks-config` so Longhorn auto-registers the local NVMe instance-store device as a V2 block-mode disk. Composed when nodePool.enabled."
                 type: object
                 properties:
                   enabled:
-                    description: Whether to compose the node-prep DaemonSet. Defaults to true (auto-gated by storage backends — when neither mayastor nor lvm is enabled the DaemonSet is skipped regardless).
+                    description: Whether to compose the node-prep DaemonSet. Defaults to true (auto-gated by nodePool.enabled — no NVMe nodes means no prep needed).
                     type: boolean
                     default: true
                   hugepages:
                     type: object
                     properties:
                       count:
-                        description: Number of 2MiB hugepages to allocate on each node. Defaults to 1024 (2GiB total). Required for Mayastor; ignored when storage.mayastor.enabled is false.
+                        description: Number of 2MiB hugepages to allocate on each node. Defaults to 1024 (2GiB total). Required by Longhorn V2 SPDK.
                         type: integer
                         default: 1024
                   image:
-                    description: Container image for the prep init container. Must have apk (or be pre-baked with lvm2 + util-linux). Defaults to alpine:3.20 (apk-installs lvm2 at startup).
+                    description: Container image for the prep init container. Must have apk (for kubectl + util-linux install). Defaults to alpine:3.20.
                     type: string
               ha:
-                description: "Stack-wide HA mode. When enabled, sets replicaCount + topology spread (one replica per zone) on all platform components: CNPG operator, Atlas operator, scale-to-zero plugin, Mayastor control plane. Per-component values can still be overridden via each component's values block."
+                description: "Stack-wide HA mode. When enabled, sets replicaCount + topology spread (one replica per zone) on all platform components: CNPG operator, Atlas operator, scale-to-zero plugin, Longhorn control plane. Per-component values can still be overridden via each component's values block."
                 type: object
                 properties:
                   enabled:

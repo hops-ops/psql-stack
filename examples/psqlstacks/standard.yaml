@@ -25,7 +25,7 @@ spec:
   ha:
     enabled: true                # 3 replicas + topology spread by zone on
     replicas: 3                  # all platform components (CNPG, Atlas,
-    topologySpreadByZone: true   # S2Z plugin, Mayastor control plane)
+    topologySpreadByZone: true   # S2Z plugin, Longhorn CSI controllers)
   scaleToZeroPlugin:
     enabled: true
   atlasOperator:

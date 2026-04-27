@@ -81,7 +81,7 @@
 {{- $snapshotClass := dict
   "enabled" $snapshotEnabled
   "name" ($snapshotSpec.name | default "psql")
-  "driver" ($snapshotSpec.driver | default "ebs.csi.aws.com")
+  "driver" ($snapshotSpec.driver | default "ebs.csi.eks.amazonaws.com")
   "deletionPolicy" ($snapshotSpec.deletionPolicy | default "Delete")
   "parameters" ($snapshotSpec.parameters | default dict)
 }}

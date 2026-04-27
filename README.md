@@ -10,7 +10,7 @@ The stack is intentionally **OS-agnostic and storage-agnostic**:
 
 - **No StorageClass.** PSQLClusters target whatever StorageClass the cluster already provides (`gp3` on EKS Auto Mode, `standard` on kind/k3d, etc.).
 - **No NodePool / node-prep.** Components run wherever the cluster's scheduler puts them. Auto Mode handles node provisioning end-to-end.
-- **Single composed snapshot target.** The stack ships a `VolumeSnapshotClass` named `psql` so PSQLBranch can request snapshots without leaking driver-specific knowledge into PSQLBranch's spec. Default driver is `ebs.csi.aws.com` (EKS Auto Mode default); override for non-AWS clusters.
+- **Single composed snapshot target.** The stack ships a `VolumeSnapshotClass` named `psql` so PSQLBranch can request snapshots without leaking driver-specific knowledge into PSQLBranch's spec. Default driver is `ebs.csi.eks.amazonaws.com` (EKS Auto Mode's managed EBS CSI driver); override for non-AWS clusters or self-managed EBS.
 
 If you need replicated CoW storage (true block-level branches with delta-only economics), that's a separate concern — see `aws-storage-stack` for self-managed nodes that can host Longhorn or similar. The default psql-stack stays on the AWS-blessed Auto Mode path.
 
@@ -21,7 +21,7 @@ If you need replicated CoW storage (true block-level branches with delta-only ec
 | **CNPG operator** | always-on | The CNCF Postgres operator. CRDs include `Cluster`, `Backup`, `Pooler`, `ScheduledBackup`. |
 | **cnpg-i-scale-to-zero plugin** | on (`spec.scaleToZeroPlugin.enabled: true`) | Auto-hibernates idle CNPG `Cluster`s. **Requires cert-manager** (provided by [`aws-cert-stack`](../../aws/cert/)). |
 | **Atlas operator** | always-on | Declarative schema migrations via `AtlasMigration` / `AtlasSchema` CRDs. |
-| **VolumeSnapshotClass** | on (`spec.snapshotClass.enabled: true`) | Named `psql` by default. Driver: `ebs.csi.aws.com`. PSQLBranch references this name. |
+| **VolumeSnapshotClass** | on (`spec.snapshotClass.enabled: true`) | Named `psql` by default. Driver: `ebs.csi.eks.amazonaws.com`. PSQLBranch references this name. |
 | **HA mode** | off (`spec.ha.enabled: false`) | When enabled: 3 replicas + `topologySpreadConstraints` by zone on CNPG, Atlas, S2Z plugin. |
 
 ## Prerequisites
@@ -141,7 +141,7 @@ spec:
 | **Snapshot class** | | | |
 | `snapshotClass.enabled` | bool | `true` | Compose the VolumeSnapshotClass |
 | `snapshotClass.name` | string | `psql` | VolumeSnapshotClass name (PSQLBranch references this) |
-| `snapshotClass.driver` | string | `ebs.csi.aws.com` | CSI driver |
+| `snapshotClass.driver` | string | `ebs.csi.eks.amazonaws.com` | CSI driver (Auto Mode default; override for self-managed EBS or non-AWS) |
 | `snapshotClass.deletionPolicy` | enum | `Delete` | `Delete` or `Retain` |
 | `snapshotClass.parameters` | object | — | Driver-specific parameters |
 

@@ -165,9 +165,9 @@ spec:
                     type: string
                     default: psql
                   driver:
-                    description: CSI driver. Defaults to ebs.csi.aws.com (EKS Auto Mode default).
+                    description: CSI driver. Defaults to ebs.csi.eks.amazonaws.com (EKS Auto Mode's managed EBS CSI driver). For self-managed EBS use ebs.csi.aws.com; for non-AWS providers, use the appropriate driver name.
                     type: string
-                    default: ebs.csi.aws.com
+                    default: ebs.csi.eks.amazonaws.com
                   deletionPolicy:
                     description: Snapshot deletion policy. Defaults to Delete.
                     type: string

@@ -4,7 +4,7 @@
 #   - CloudNativePG operator (Helm)
 #   - cnpg-i-scale-to-zero plugin (set of Objects, requires cert-manager)
 #   - Atlas operator (Helm)
-#   - VolumeSnapshotClass `psql` (driver: ebs.csi.aws.com)
+#   - VolumeSnapshotClass `psql` (driver: ebs.csi.eks.amazonaws.com)
 #
 # PSQLClusters target the cluster's existing default StorageClass
 # (gp3 on EKS Auto Mode, standard on kind/k3d, etc.). PSQLBranch

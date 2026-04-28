@@ -27,7 +27,7 @@ If you need replicated CoW storage (true block-level branches with delta-only ec
 ## Prerequisites
 
 - **A working CSI driver + StorageClass** on the cluster. EKS Auto Mode provides `ebs.csi.eks.amazonaws.com` automatically. For kind/k3d, the bundled `standard` SC works.
-- **VolumeSnapshot CRDs + snapshot-controller** (`snapshot.storage.k8s.io`). EKS Auto Mode ships the **CRDs only** — you must install the snapshot-controller separately (e.g. apply [kubernetes-csi/external-snapshotter](https://github.com/kubernetes-csi/external-snapshotter) `rbac-snapshot-controller.yaml` + `setup-snapshot-controller.yaml`). Without a controller, the composed VolumeSnapshotClass is inert and PSQLBranch snapshots will never reach `ReadyToUse`. The stack itself does not compose snapshot-controller — it's a cluster-wide foundational concern that belongs in a separate stack.
+- **VolumeSnapshot CRDs + snapshot-controller** (`snapshot.storage.k8s.io`). EKS Auto Mode ships the snapshot CRDs but **not** the cluster-wide snapshot-controller. Without one, the composed VolumeSnapshotClass is inert and PSQLBranch snapshots will never reach `ReadyToUse`. Install [`volume-snapshot-stack`](../volume-snapshot/) (also in this org) — it composes the upstream snapshot-controller via the piraeus-charts Helm chart and is the canonical CRD installer for the cluster.
 - **cert-manager** (only when `scaleToZeroPlugin.enabled` — the plugin uses cert-manager Issuer+Certificate for its gRPC TLS). Provided by [`aws-cert-stack`](../../aws/cert/).
 
 ## Stages

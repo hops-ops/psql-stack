@@ -1,0 +1,46 @@
+# code: language=yaml
+#
+# Extract observed state from composed resources
+#
+
+{{- $observed := $.observed.resources | default dict }}
+
+# ==============================================================================
+# Cluster status — read CNPG Cluster's `.status.phase` from the wrapped Object's
+# `.status.atProvider.manifest.status.phase`. The Object's Ready=true means the
+# manifest applied; the wrapped Cluster's phase tells us if Postgres is healthy.
+# ==============================================================================
+{{- $clusterEntry := get $observed "cnpg-cluster" | default dict }}
+{{- $clusterResource := $clusterEntry.resource | default dict }}
+{{- $clusterAtProvider := (($clusterResource.status | default dict).atProvider | default dict) }}
+{{- $clusterManifest := $clusterAtProvider.manifest | default dict }}
+{{- $clusterStatus := $clusterManifest.status | default dict }}
+{{- $clusterPhase := $clusterStatus.phase | default "" }}
+{{- $clusterReady := false }}
+{{- if eq $clusterPhase "Cluster in healthy state" }}
+  {{- $clusterReady = true }}
+{{- end }}
+
+# ==============================================================================
+# ExternalSecret status — Object Ready=true means the ExternalSecret CR exists.
+# We don't inspect the wrapped status further; SecretSynced is fast enough.
+# ==============================================================================
+{{- $esEntry := get $observed "external-secret" | default dict }}
+{{- $esResource := $esEntry.resource | default dict }}
+{{- $esConditions := (($esResource.status | default dict).conditions | default list) }}
+{{- $esReady := false }}
+{{- range $esConditions }}
+  {{- if and (eq .type "Ready") (eq .status "True") }}
+    {{- $esReady = true }}
+  {{- end }}
+{{- end }}
+
+{{- $state = set $state "observed" (dict
+  "cluster" (dict "ready" $clusterReady "phase" $clusterPhase)
+  "externalSecret" (dict "ready" $esReady)
+) }}
+
+{{- $state = set $state "status" (dict
+  "ready" false
+  "clusterPhase" $clusterPhase
+) }}

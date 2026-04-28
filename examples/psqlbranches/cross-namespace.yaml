@@ -1,0 +1,18 @@
+# Cross-namespace branch — preview branch in `preview-pr-142` namespace
+# forking a source PSQLCluster in `team-app` namespace.
+#
+# Composition: 1 VolumeSnapshot in `team-app` (of source PVC) + 1 bridging
+# VolumeSnapshot in `preview-pr-142` (bound to the same VolumeSnapshotContent)
+# + 1 CNPG Cluster in `preview-pr-142` (bootstrapped from the branch-ns
+# VolumeSnapshot).
+#
+apiVersion: hops.ops.com.ai/v1alpha1
+kind: PSQLBranch
+metadata:
+  name: pr-142
+  namespace: preview-pr-142
+spec:
+  clusterName: production-cluster
+  source:
+    name: my-app
+    namespace: team-app          # cross-namespace: branch ns differs from source ns

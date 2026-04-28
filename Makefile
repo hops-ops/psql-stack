@@ -1,12 +1,17 @@
 SHELL := /bin/bash
 
 PACKAGE ?= psql-stack
+# Default XRD_DIR for legacy single-API targets; multi-API targets derive per-example.
 XRD_DIR := apis/psqlstacks
 COMPOSITION := $(XRD_DIR)/composition.yaml
 DEFINITION := $(XRD_DIR)/definition.yaml
 EXAMPLE_DEFAULT := examples/psqlstacks/standard.yaml
 RENDER_TESTS := $(wildcard tests/test-*)
 E2E_TESTS := $(wildcard tests/e2etest-*)
+
+# Multi-API support: examples/<apiplural>/<example>.yaml maps to apis/<apiplural>/.
+# Helper macro: api_dir_for(example_path) → apis/<dirname>
+api-dir = apis/$(word 2,$(subst /, ,$(1)))
 
 clean:
 	rm -rf _output
@@ -17,9 +22,13 @@ build:
 
 # Examples list - mirrors GitHub Actions workflow
 # Format: example_path::observed_resources_path (observed_resources_path is optional)
+# api_path is derived from example_path via the api-dir macro (examples/<x>/... → apis/<x>/).
 EXAMPLES := \
     examples/psqlstacks/minimal.yaml:: \
-    examples/psqlstacks/standard.yaml::
+    examples/psqlstacks/standard.yaml:: \
+    examples/psqlclusters/minimal.yaml:: \
+    examples/psqlclusters/standard.yaml:: \
+    examples/psqlbranches/same-namespace.yaml::
 
 # Render all examples (parallel execution, output shown per-job when complete)
 render\:all:

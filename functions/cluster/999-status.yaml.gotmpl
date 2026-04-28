@@ -1,0 +1,22 @@
+# code: language=yaml
+#
+# Output XR status + Warning conditions for cross-toggle conflicts.
+#
+
+{{- $xr := getCompositeResource . }}
+---
+apiVersion: {{ $xr.apiVersion }}
+kind: {{ $xr.kind }}
+status:
+  ready: {{ $state.status.ready }}
+  clusterPhase: {{ $state.status.clusterPhase | quote }}
+  {{- if $state.warnings }}
+  conditions:
+    {{- range $i, $msg := $state.warnings }}
+    - type: ConfigurationWarning
+      status: "True"
+      reason: ConflictingToggles
+      message: {{ $msg | quote }}
+      lastTransitionTime: "1970-01-01T00:00:00Z"
+    {{- end }}
+  {{- end }}

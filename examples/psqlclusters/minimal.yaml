@@ -1,0 +1,12 @@
+# Minimal claim: single Postgres instance, ESO-managed superuser, branching on,
+# monitoring on. Sub-10-line claim for typical app workloads.
+#
+apiVersion: hops.ops.com.ai/v1alpha1
+kind: PSQLCluster
+metadata:
+  name: my-app
+  namespace: default
+spec:
+  clusterName: my-cluster
+  storage:
+    size: 10Gi

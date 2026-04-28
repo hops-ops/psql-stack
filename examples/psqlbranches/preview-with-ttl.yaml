@@ -1,0 +1,22 @@
+# Preview-PR posture — aggressive S2Z + 7-day TTL recorded for external
+# cleanup tooling (Kyverno cleanupPolicies, ArgoCD sync windows, etc.).
+#
+apiVersion: hops.ops.com.ai/v1alpha1
+kind: PSQLBranch
+metadata:
+  name: pr-142
+  namespace: preview-pr-142
+spec:
+  clusterName: production-cluster
+  labels:
+    pr: "142"
+    team: payments
+  source:
+    name: orders
+    namespace: payments
+  scaleToZero:
+    enabled: true
+    idleTimeout: 5m              # very aggressive — preview envs hibernate quickly
+  ttl:
+    enabled: true
+    after: 168h                  # 7d

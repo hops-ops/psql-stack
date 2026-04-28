@@ -1,0 +1,208 @@
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: psqlclusters.hops.ops.com.ai
+spec:
+  group: hops.ops.com.ai
+  names:
+    kind: PSQLCluster
+    plural: psqlclusters
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    referenceable: true
+    served: true
+    schema:
+      openAPIV3Schema:
+        description: |
+          PSQLCluster is the per-app Postgres primitive. Composes a CloudNativePG
+          `Cluster` plus the wiring (annotations, plugin entries, labels) required
+          for the platform integrations (scale-to-zero, branching, monitoring, HA).
+
+          Companion to `psql-stack` (which provides the CNPG operator + S2Z plugin
+          substrate; required as a target-cluster prerequisite) and to `psql-branch`
+          (which composes ephemeral CoW forks of a PSQLCluster via VolumeSnapshot).
+
+          Intent-first surface: integration toggles (`scaleToZero.enabled`,
+          `branching.enabled`, `monitoring.enabled`, `ha.enabled`) translate to
+          CNPG mechanics inside the render template — consumer manifests don't
+          reach for `cnpg.overrideAllValues` unless their use case is genuinely
+          novel.
+        type: object
+        properties:
+          spec:
+            description: PSQLClusterSpec defines the desired state.
+            type: object
+            properties:
+              clusterName:
+                description: Name of the target cluster. Used as default for kubernetesProviderConfigRef.name and label values.
+                type: string
+              labels:
+                description: Custom labels merged with stack defaults; applied to every composed resource.
+                type: object
+                additionalProperties:
+                  type: string
+                x-kubernetes-preserve-unknown-fields: true
+              managementPolicies:
+                description: Crossplane managementPolicies applied to every composed resource. Defaults to ["*"].
+                type: array
+                items:
+                  type: string
+                default:
+                - "*"
+              kubernetesProviderConfigRef:
+                description: Reference to the Kubernetes ProviderConfig used to apply the Cluster CR + ExternalSecret. Defaults to clusterName.
+                type: object
+                properties:
+                  name:
+                    type: string
+                  kind:
+                    type: string
+                    enum:
+                    - ProviderConfig
+                    - ClusterProviderConfig
+
+              # ============================================================
+              # Sizing
+              # ============================================================
+              instances:
+                description: Number of Postgres instances. Default 1 (single-node). HA mode bumps to ha.replicas.
+                type: integer
+                default: 1
+              storage:
+                description: Postgres data PVC sizing. Online expansion is supported by CNPG when allowVolumeExpansion is true on the StorageClass (gp3 default on EKS Auto Mode) — bumping `size` upward grows the volume in place with no downtime.
+                type: object
+                properties:
+                  size:
+                    description: PVC size, e.g. "10Gi". Required.
+                    type: string
+                  class:
+                    description: StorageClass name. Empty = cluster default (gp3 on Auto Mode).
+                    type: string
+                    default: ""
+                required:
+                - size
+
+              # ============================================================
+              # Postgres
+              # ============================================================
+              postgresql:
+                description: Postgres version + tuning parameters.
+                type: object
+                properties:
+                  version:
+                    description: Postgres major version. Defaults to "17".
+                    type: string
+                    default: "17"
+                  parameters:
+                    description: postgres.conf parameters (e.g. `shared_buffers`, `max_connections`).
+                    type: object
+                    additionalProperties:
+                      type: string
+                    x-kubernetes-preserve-unknown-fields: true
+
+              # ============================================================
+              # Credentials — typed intent
+              # ============================================================
+              credentials:
+                description: Where Postgres credentials are sourced from.
+                type: object
+                properties:
+                  superuser:
+                    type: object
+                    properties:
+                      managedBy:
+                        description: ClusterSecretStore name for sourcing the superuser password from a secrets backend (default ESO ClusterSecretStore convention). Set "" to skip ExternalSecret composition (consumer must provide a K8s Secret named `<secretName>` with `username` + `password` keys).
+                        type: string
+                        default: hops-aws-secrets-manager
+                      secretName:
+                        description: K8s Secret name receiving the credentials. Defaults to "<cluster-name>-superuser".
+                        type: string
+                        default: ""
+                      remoteKey:
+                        description: Key in the remote secrets backend (AWS Secrets Manager) holding the superuser password. Defaults to "<cluster-name>/superuser".
+                        type: string
+                        default: ""
+
+              # ============================================================
+              # Cross-stack integration toggles
+              # ============================================================
+              scaleToZero:
+                description: Auto-hibernate the cluster after `idleTimeout` of no client activity. Requires the cnpg-i-scale-to-zero plugin on the target cluster (provided by psql-stack). When `ha.enabled` is also true, the cluster will not actually scale to zero (HA implies always-available); a Warning condition is emitted on the XR but the annotation is rendered for tooling that reads it.
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                    default: false
+                  idleTimeout:
+                    description: How long the cluster must be idle before hibernating. Defaults to "30m".
+                    type: string
+                    default: 30m
+
+              branching:
+                description: Mark this cluster as a fork-source. PSQLBranch finds branchable clusters by reading the labels emitted here. Default-on (cheap when unused — just metadata).
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                    default: true
+                  snapshotClassName:
+                    description: VolumeSnapshotClass name composed by psql-stack (default "psql"). PSQLBranch references this name to fork the cluster's PVC.
+                    type: string
+                    default: psql
+
+              monitoring:
+                description: Add Prometheus scrape configuration. CNPG operator handles the actual PodMonitor creation when `monitoring.enablePodMonitor` is set on the Cluster CR.
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                    default: true
+
+              # ============================================================
+              # HA
+              # ============================================================
+              ha:
+                description: Stack-wide HA. Bumps instances to `replicas` (default 3) and adds zonal topology spread.
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                    default: false
+                  replicas:
+                    type: integer
+                    default: 3
+                  topologySpreadByZone:
+                    type: boolean
+                    default: true
+
+              # ============================================================
+              # Escape hatches
+              # ============================================================
+              cnpg:
+                description: Direct passthrough into the composed Cluster CR's spec. Use for novel CNPG features not yet covered by the intent-first surface above.
+                type: object
+                properties:
+                  values:
+                    description: Merged into the Cluster.spec — adds to / overrides individual fields rendered by the template.
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  overrideAllValues:
+                    description: Replaces the entire Cluster.spec — total escape hatch.
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+            required:
+            - clusterName
+            - storage
+          status:
+            description: PSQLClusterStatus defines the observed state.
+            type: object
+            properties:
+              ready:
+                description: Overall readiness — true once the CNPG Cluster reaches `Cluster in healthy state` AND the ExternalSecret (if composed) is SecretSynced.
+                type: boolean
+              clusterPhase:
+                description: Current CNPG Cluster `.status.phase` (e.g. "Cluster in healthy state").
+                type: string
+        required:
+        - spec

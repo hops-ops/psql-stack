@@ -1,0 +1,171 @@
+# code: language=yaml
+#
+# Initialize $state with spec defaults
+#
+
+{{- $xr := getCompositeResource . }}
+{{- $spec := $xr.spec | default dict }}
+{{- $metadata := $xr.metadata | default dict }}
+
+# ==============================================================================
+# Core defaults
+# ==============================================================================
+{{- $name := $metadata.name }}
+{{- $namespace := $metadata.namespace | default "default" }}
+{{- $clusterName := $spec.clusterName }}
+{{- $managementPolicies := $spec.managementPolicies | default (list "*") }}
+
+# Labels
+{{- $defaultLabels := dict
+  "hops.ops.com.ai/managed" "true"
+  "hops.ops.com.ai/psql-cluster" $name
+}}
+{{- $labels := merge $defaultLabels ($spec.labels | default dict) }}
+
+# Kubernetes provider config (defaults to clusterName)
+{{- $k8sProviderConfigRef := $spec.kubernetesProviderConfigRef | default dict }}
+{{- $k8sProviderConfigRef = dict
+  "name" ($k8sProviderConfigRef.name | default $clusterName)
+  "kind" ($k8sProviderConfigRef.kind | default "ProviderConfig")
+}}
+
+# ==============================================================================
+# HA — flips instances to ha.replicas + zonal topology spread.
+# When ha.enabled and scaleToZero.enabled are both true, the cluster won't
+# actually scale to zero (HA implies always-available); a Warning condition
+# gets emitted on the XR but the annotation is still rendered for tooling.
+# ==============================================================================
+{{- $haSpec := $spec.ha | default dict }}
+{{- $haEnabled := false }}
+{{- if hasKey $haSpec "enabled" }}
+  {{- $haEnabled = $haSpec.enabled }}
+{{- end }}
+{{- $haReplicas := $haSpec.replicas | default 3 }}
+{{- $haSpreadByZone := true }}
+{{- if hasKey $haSpec "topologySpreadByZone" }}
+  {{- $haSpreadByZone = $haSpec.topologySpreadByZone }}
+{{- end }}
+{{- $ha := dict
+  "enabled" $haEnabled
+  "replicas" $haReplicas
+  "topologySpreadByZone" $haSpreadByZone
+}}
+
+# Resolve effective instance count: HA wins
+{{- $instances := $spec.instances | default 1 }}
+{{- if $haEnabled }}
+  {{- $instances = $haReplicas }}
+{{- end }}
+
+# ==============================================================================
+# Storage
+# ==============================================================================
+{{- $storageSpec := $spec.storage }}
+{{- $storage := dict
+  "size" $storageSpec.size
+  "class" ($storageSpec.class | default "")
+}}
+
+# ==============================================================================
+# Postgres
+# ==============================================================================
+{{- $pgSpec := $spec.postgresql | default dict }}
+{{- $postgresql := dict
+  "version" ($pgSpec.version | default "17")
+  "parameters" ($pgSpec.parameters | default dict)
+}}
+
+# ==============================================================================
+# Credentials
+# ==============================================================================
+{{- $credSpec := ($spec.credentials | default dict).superuser | default dict }}
+{{- $credManagedBy := "hops-aws-secrets-manager" }}
+{{- if hasKey $credSpec "managedBy" }}
+  {{- $credManagedBy = $credSpec.managedBy }}
+{{- end }}
+{{- $credSecretName := $credSpec.secretName }}
+{{- if not $credSecretName }}
+  {{- $credSecretName = printf "%s-superuser" $name }}
+{{- end }}
+{{- $credRemoteKey := $credSpec.remoteKey }}
+{{- if not $credRemoteKey }}
+  {{- $credRemoteKey = printf "%s/superuser" $name }}
+{{- end }}
+{{- $credentials := dict
+  "superuser" (dict
+    "managedBy" $credManagedBy
+    "secretName" $credSecretName
+    "remoteKey" $credRemoteKey
+  )
+}}
+
+# ==============================================================================
+# Integration toggles
+# ==============================================================================
+{{- $s2zSpec := $spec.scaleToZero | default dict }}
+{{- $s2zEnabled := false }}
+{{- if hasKey $s2zSpec "enabled" }}
+  {{- $s2zEnabled = $s2zSpec.enabled }}
+{{- end }}
+{{- $scaleToZero := dict
+  "enabled" $s2zEnabled
+  "idleTimeout" ($s2zSpec.idleTimeout | default "30m")
+}}
+
+{{- $branchSpec := $spec.branching | default dict }}
+{{- $branchEnabled := true }}
+{{- if hasKey $branchSpec "enabled" }}
+  {{- $branchEnabled = $branchSpec.enabled }}
+{{- end }}
+{{- $branching := dict
+  "enabled" $branchEnabled
+  "snapshotClassName" ($branchSpec.snapshotClassName | default "psql")
+}}
+
+{{- $monSpec := $spec.monitoring | default dict }}
+{{- $monEnabled := true }}
+{{- if hasKey $monSpec "enabled" }}
+  {{- $monEnabled = $monSpec.enabled }}
+{{- end }}
+{{- $monitoring := dict "enabled" $monEnabled }}
+
+# ==============================================================================
+# Escape hatch
+# ==============================================================================
+{{- $cnpgSpec := $spec.cnpg | default dict }}
+{{- $cnpg := dict
+  "values" ($cnpgSpec.values | default dict)
+  "overrideAllValues" ($cnpgSpec.overrideAllValues | default dict)
+}}
+
+# ==============================================================================
+# Initialize $state
+# ==============================================================================
+{{- $state := dict
+  "name" $name
+  "namespace" $namespace
+  "clusterName" $clusterName
+  "managementPolicies" $managementPolicies
+  "labels" $labels
+  "kubernetesProviderConfigRef" $k8sProviderConfigRef
+  "instances" $instances
+  "storage" $storage
+  "postgresql" $postgresql
+  "credentials" $credentials
+  "scaleToZero" $scaleToZero
+  "branching" $branching
+  "monitoring" $monitoring
+  "ha" $ha
+  "cnpg" $cnpg
+  "observed" (dict)
+  "status" (dict)
+  "warnings" (list)
+}}
+
+# ==============================================================================
+# Validate cross-toggle combinations
+# ==============================================================================
+{{- if and $haEnabled $s2zEnabled }}
+  {{- $warnings := append $state.warnings "scaleToZero+ha both enabled: HA implies always-available, the cluster will not actually scale to zero" }}
+  {{- $state = set $state "warnings" $warnings }}
+{{- end }}

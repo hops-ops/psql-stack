@@ -1,0 +1,13 @@
+# Same-namespace branch — fork a PSQLCluster in the same namespace.
+# Composition collapses to: 1 VolumeSnapshot (referencing source PVC directly)
+# + 1 CNPG Cluster bootstrapped from it.
+#
+apiVersion: hops.ops.com.ai/v1alpha1
+kind: PSQLBranch
+metadata:
+  name: pr-142
+  namespace: default
+spec:
+  clusterName: my-cluster
+  source:
+    name: my-app                 # source PSQLCluster in same namespace

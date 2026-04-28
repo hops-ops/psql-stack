@@ -1,0 +1,39 @@
+# code: language=yaml
+#
+# Extract observed state from composed resources
+#
+
+{{- $observed := $.observed.resources | default dict }}
+
+# Branch CNPG Cluster phase — wraps the same provider-kubernetes Object pattern
+# as PSQLCluster.
+{{- $clusterEntry := get $observed "cnpg-cluster" | default dict }}
+{{- $clusterResource := $clusterEntry.resource | default dict }}
+{{- $clusterAtProvider := (($clusterResource.status | default dict).atProvider | default dict) }}
+{{- $clusterManifest := $clusterAtProvider.manifest | default dict }}
+{{- $clusterStatus := $clusterManifest.status | default dict }}
+{{- $clusterPhase := $clusterStatus.phase | default "" }}
+
+# Read the bound VolumeSnapshotContent name from the branch-ns VolumeSnapshot
+# (or the source-ns one when same-namespace).
+{{- $snapEntry := get $observed "branch-snapshot" | default dict }}
+{{- if not (get $observed "branch-snapshot") }}
+  {{- $snapEntry = get $observed "source-snapshot" | default dict }}
+{{- end }}
+{{- $snapResource := $snapEntry.resource | default dict }}
+{{- $snapAtProvider := (($snapResource.status | default dict).atProvider | default dict) }}
+{{- $snapManifest := $snapAtProvider.manifest | default dict }}
+{{- $snapStatus := $snapManifest.status | default dict }}
+{{- $snapContent := $snapStatus.boundVolumeSnapshotContentName | default "" }}
+
+{{- $state = set $state "observed" (dict
+  "cluster" (dict "phase" $clusterPhase)
+  "snapshotContent" $snapContent
+) }}
+
+{{- $state = set $state "status" (dict
+  "ready" false
+  "bootstrapPhase" $clusterPhase
+  "bootstrapMethod" "volumeSnapshot"
+  "sourceSnapshotContent" $snapContent
+) }}

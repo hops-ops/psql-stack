@@ -23,21 +23,23 @@ permissions:
 
 jobs:
   validate:
-    uses: unbounded-tech/workflows-crossplane/.github/workflows/validate.yaml@v2.20.0
+    uses: unbounded-tech/workflows-crossplane/.github/workflows/validate.yaml@feat/multi-api-support
     with:
       examples: |
         [
-          { "example": "examples/psqlstacks/minimal.yaml" },
-          { "example": "examples/psqlstacks/standard.yaml" }
+          { "example": "examples/psqlstacks/minimal.yaml",   "api_path": "apis/psqlstacks" },
+          { "example": "examples/psqlstacks/standard.yaml",  "api_path": "apis/psqlstacks" },
+          { "example": "examples/psqlclusters/minimal.yaml", "api_path": "apis/psqlclusters" },
+          { "example": "examples/psqlclusters/standard.yaml","api_path": "apis/psqlclusters" },
+          { "example": "examples/psqlbranches/same-namespace.yaml", "api_path": "apis/psqlbranches" }
         ]
-      api_path: apis/psqlstacks
       error_on_missing_schemas: true
 
   test:
-    uses: unbounded-tech/workflows-crossplane/.github/workflows/test.yaml@v2.20.0
+    uses: unbounded-tech/workflows-crossplane/.github/workflows/test.yaml@feat/multi-api-support
 
   e2e:
-    uses: unbounded-tech/workflows-crossplane/.github/workflows/e2e.yaml@v2.20.0
+    uses: unbounded-tech/workflows-crossplane/.github/workflows/e2e.yaml@feat/multi-api-support
 
   version-and-tag:
     name: Version and Tag

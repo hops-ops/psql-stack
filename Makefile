@@ -37,14 +37,17 @@ render\:all:
 	for entry in $(EXAMPLES); do \
 		example=$${entry%%::*}; \
 		observed=$${entry#*::}; \
+		api_dir=$$(echo "$$example" | awk -F/ '{print "apis/" $$2}'); \
+		composition="$$api_dir/composition.yaml"; \
+		definition="$$api_dir/definition.yaml"; \
 		outfile="$$tmpdir/$$(echo $$entry | tr '/:' '__')"; \
 		( \
 			if [ -n "$$observed" ]; then \
 				echo "=== Rendering $$example with observed-resources $$observed ==="; \
-				up composition render --xrd=$(DEFINITION) $(COMPOSITION) $$example --observed-resources=$$observed; \
+				up composition render --xrd=$$definition $$composition $$example --observed-resources=$$observed; \
 			else \
-				echo "=== Rendering $$example ==="; \
-				up composition render --xrd=$(DEFINITION) $(COMPOSITION) $$example; \
+				echo "=== Rendering $$example (api=$$api_dir) ==="; \
+				up composition render --xrd=$$definition $$composition $$example; \
 			fi; \
 			echo "" \
 		) > "$$outfile" 2>&1 & \
@@ -67,18 +70,21 @@ validate\:all:
 	for entry in $(EXAMPLES); do \
 		example=$${entry%%::*}; \
 		observed=$${entry#*::}; \
+		api_dir=$$(echo "$$example" | awk -F/ '{print "apis/" $$2}'); \
+		composition="$$api_dir/composition.yaml"; \
+		definition="$$api_dir/definition.yaml"; \
 		outfile="$$tmpdir/$$(echo $$entry | tr '/:' '__')"; \
 		( \
 			if [ -n "$$observed" ]; then \
 				echo "=== Validating $$example with observed-resources $$observed ==="; \
-				up composition render --xrd=$(DEFINITION) $(COMPOSITION) $$example \
+				up composition render --xrd=$$definition $$composition $$example \
 					--observed-resources=$$observed --include-full-xr --quiet | \
-					crossplane beta validate $(XRD_DIR) --error-on-missing-schemas -; \
+					crossplane beta validate $$api_dir --error-on-missing-schemas -; \
 			else \
-				echo "=== Validating $$example ==="; \
-				up composition render --xrd=$(DEFINITION) $(COMPOSITION) $$example \
+				echo "=== Validating $$example (api=$$api_dir) ==="; \
+				up composition render --xrd=$$definition $$composition $$example \
 					--include-full-xr --quiet | \
-					crossplane beta validate $(XRD_DIR) --error-on-missing-schemas -; \
+					crossplane beta validate $$api_dir --error-on-missing-schemas -; \
 			fi; \
 			echo "" \
 		) > "$$outfile" 2>&1 & \
@@ -106,9 +112,9 @@ render\:%:
 
 validate\:%:
 	@example="examples/psqlstacks/$*.yaml"; \
-	up composition render --xrd=$(DEFINITION) $(COMPOSITION) $$example \
+	up composition render --xrd=$$definition $$composition $$example \
 		--include-full-xr --quiet | \
-		crossplane beta validate $(XRD_DIR) --error-on-missing-schemas -
+		crossplane beta validate $$api_dir --error-on-missing-schemas -
 
 test:
 	up test run $(RENDER_TESTS)

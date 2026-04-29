@@ -304,6 +304,11 @@ _items = [
                     metadata.name = "cloudnative-pg"
                 }
                 {
+                    apiVersion = "helm.m.crossplane.io/v1beta1"
+                    kind = "Release"
+                    metadata.name = "atlas-operator"
+                }
+                {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                     kind = "Object"
                     metadata.name = "no-s2z-volumesnapshotclass"

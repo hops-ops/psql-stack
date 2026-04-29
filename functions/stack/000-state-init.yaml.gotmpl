@@ -70,8 +70,9 @@
 # ==============================================================================
 # VolumeSnapshotClass — the stack's only storage-layer composition.
 # PSQLBranch targets this VSC by name when forking primaries. Default driver
-# is ebs.csi.aws.com (correct for EKS Auto Mode); override for other CSI
-# providers via $spec.snapshotClass.driver.
+# is ebs.csi.eks.amazonaws.com (EKS Auto Mode's managed EBS CSI driver);
+# override for other CSI providers via $spec.snapshotClass.driver
+# (e.g. ebs.csi.aws.com for self-managed EBS, driver.longhorn.io).
 # ==============================================================================
 {{- $snapshotSpec := $spec.snapshotClass | default dict }}
 {{- $snapshotEnabled := true }}

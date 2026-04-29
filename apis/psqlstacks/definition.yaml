@@ -147,10 +147,11 @@ spec:
               snapshotClass:
                 description: |
                   VolumeSnapshotClass used by PSQLBranch as its forking target. The
-                  stack composes exactly one VolumeSnapshotClass named after the XR
-                  (default: "psql"). On EKS Auto Mode the default driver
-                  (ebs.csi.aws.com) is correct out of the box; override `driver` for
-                  other CSI providers (e.g. driver.longhorn.io, hostpath.csi.k8s.io).
+                  stack composes exactly one VolumeSnapshotClass with `name` defaulting
+                  to "psql" (PSQLBranch references it by name). The default driver is
+                  `ebs.csi.eks.amazonaws.com` (EKS Auto Mode's managed EBS CSI driver);
+                  override `driver` for other providers (e.g. `ebs.csi.aws.com` for
+                  self-managed EBS, `driver.longhorn.io`, `hostpath.csi.k8s.io`).
                   PSQLClusters target whatever StorageClass the cluster already
                   provides (Auto Mode ships gp3 by default) — the stack does not
                   compose a StorageClass.
@@ -188,7 +189,7 @@ spec:
             type: object
             properties:
               ready:
-                description: Overall readiness — true once CNPG, Atlas, the scale-to-zero plugin, and the VolumeSnapshotClass are all Ready.
+                description: Overall readiness — true once every enabled component is Ready (CNPG, Atlas, the scale-to-zero plugin if `scaleToZeroPlugin.enabled`, and the VolumeSnapshotClass if `snapshotClass.enabled`). Disabled components are treated as Ready.
                 type: boolean
         required:
         - spec

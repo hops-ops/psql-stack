@@ -7,9 +7,11 @@
 # whatever the target cluster already provides (gp3 on EKS Auto Mode,
 # standard on kind/k3d, etc.).
 #
-# Default driver: ebs.csi.aws.com (correct for EKS Auto Mode out of the box).
+# Default driver: ebs.csi.eks.amazonaws.com (EKS Auto Mode's managed EBS CSI
+# driver; sourced from $state.snapshotClass.driver in 000-state-init.yaml.gotmpl).
 # Override $spec.snapshotClass.driver for non-AWS / non-EBS providers
-# (e.g. driver.longhorn.io, hostpath.csi.k8s.io).
+# (e.g. ebs.csi.aws.com for self-managed EBS, driver.longhorn.io,
+# hostpath.csi.k8s.io).
 #
 
 {{- $snap := $state.snapshotClass }}

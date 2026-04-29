@@ -60,8 +60,14 @@ spec:
 # Usage: Protect cnpg-operator from deletion until atlas-operator is deleted.
 # Atlas manages schema migrations against CNPG-managed databases; deleting CNPG
 # first would orphan Atlas's migration state.
+#
+# Gate on observed *existence* (both Releases present in $.observed.resources),
+# NOT readiness. If Atlas is still progressing or in error and the user deletes
+# the stack at that moment, the Usage must already exist — otherwise CNPG could
+# be torn down first and orphan Atlas.
 # ==============================================================================
-{{- if and $state.observed.cnpg.ready $state.observed.atlasOperator.ready }}
+{{- $observed := $.observed.resources | default dict }}
+{{- if and (hasKey $observed "cnpg-operator") (hasKey $observed "atlas-operator") }}
 ---
 apiVersion: protection.crossplane.io/v1beta1
 kind: Usage

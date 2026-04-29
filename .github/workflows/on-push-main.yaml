@@ -40,6 +40,10 @@ jobs:
 
   e2e:
     uses: unbounded-tech/workflows-crossplane/.github/workflows/e2e.yaml@feat/multi-api-support
+    with:
+      # See on-pr.yaml — 90 min for the full Ready chain.
+      timeout-minutes: 90
+      cleanup-timeout-minutes: 30
 
   version-and-tag:
     name: Version and Tag

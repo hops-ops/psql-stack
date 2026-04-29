@@ -187,7 +187,7 @@ _items = [
                         }
                         storage = {size = "1Gi"}
                         # Skip ExternalSecret in e2e — no ESO ClusterSecretStore in kind harness.
-                        credentials.superuser.managedBy = ""
+                        app.managedBy = ""
                     }
                 }
                 # 3. PSQLBranch — ephemeral fork. Snapshots the source

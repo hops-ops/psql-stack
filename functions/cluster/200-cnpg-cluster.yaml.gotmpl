@@ -66,9 +66,9 @@ spec:
           "imageName" (printf "ghcr.io/cloudnative-pg/postgresql:%s" $state.postgresql.version)
           "bootstrap" (dict
             "initdb" (dict
-              "database" "app"
-              "owner" "app"
-              "secret" (dict "name" $state.credentials.superuser.secretName)
+              "database" $state.app.database
+              "owner" $state.app.role
+              "secret" (dict "name" $state.app.secretName)
             )
           )
           "storage" (dict
@@ -78,6 +78,9 @@ spec:
             "enablePodMonitor" $state.monitoring.enabled
           )
         }}
+        {{- if $state.superuser.enabled }}
+          {{- $_ := set $clusterSpec "superuserSecret" (dict "name" $state.superuser.secretName) }}
+        {{- end }}
         {{- if $state.storage.class }}
           {{- $_ := set $clusterSpec.storage "storageClass" $state.storage.class }}
         {{- end }}

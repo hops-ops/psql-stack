@@ -102,27 +102,108 @@ spec:
                     x-kubernetes-preserve-unknown-fields: true
 
               # ============================================================
-              # Credentials — typed intent
+              # Application user — the role your app connects as.
+              #
+              # Common case: drop in `app.externalSecret` pointing at the
+              # platform's ClusterSecretStore and key. Or omit `externalSecret`
+              # entirely and pre-create the K8s Secret named `<secretName>`
+              # with `username`+`password` keys (BYO mode).
               # ============================================================
-              credentials:
-                description: Where Postgres credentials are sourced from.
+              app:
+                description: Application user — the Postgres role your app connects as. CNPG uses these credentials for `bootstrap.initdb`.
                 type: object
                 properties:
-                  superuser:
+                  role:
+                    description: Postgres role name owning the application database. Defaults to "app".
+                    type: string
+                    default: app
+                  database:
+                    description: Application database name. Defaults to "app".
+                    type: string
+                    default: app
+                  secretName:
+                    description: K8s Secret holding the app role's credentials. Defaults to "<cluster-name>-app". With `externalSecret` set, the composition writes this Secret; otherwise pre-create it yourself.
+                    type: string
+                    default: ""
+                  externalSecret:
+                    description: Source the credentials via External Secrets Operator. Omit to BYO the K8s Secret named `secretName`.
                     type: object
                     properties:
-                      managedBy:
-                        description: ClusterSecretStore name for sourcing the superuser password from a secrets backend (default ESO ClusterSecretStore convention). Set "" to skip ExternalSecret composition (consumer must provide a K8s Secret named `<secretName>` with `username` + `password` keys).
-                        type: string
-                        default: hops-aws-secrets-manager
-                      secretName:
-                        description: K8s Secret name receiving the credentials. Defaults to "<cluster-name>-superuser".
-                        type: string
-                        default: ""
-                      remoteKey:
-                        description: Key in the remote secrets backend (AWS Secrets Manager) holding the superuser password. Defaults to "<cluster-name>/superuser".
-                        type: string
-                        default: ""
+                      secretStore:
+                        description: Reference to the SecretStore or ClusterSecretStore providing the value.
+                        type: object
+                        properties:
+                          kind:
+                            description: Store kind. Use ClusterSecretStore for cluster-scoped stores (the platform default), SecretStore for namespaced stores in this XR's namespace.
+                            type: string
+                            enum:
+                            - ClusterSecretStore
+                            - SecretStore
+                            default: ClusterSecretStore
+                          name:
+                            description: Name of the SecretStore or ClusterSecretStore.
+                            type: string
+                          namespace:
+                            description: Namespace of the SecretStore (ignored for ClusterSecretStore). Defaults to the PSQLCluster's namespace.
+                            type: string
+                        required:
+                        - name
+                      secretRef:
+                        description: Where in the secrets backend the credentials live. The remote value must be a JSON blob with `username` and `password` properties — both are extracted into the resulting K8s Secret.
+                        type: object
+                        properties:
+                          path:
+                            description: Path/key in the secrets backend (e.g. AWS Secrets Manager `my-cluster/app`).
+                            type: string
+                        required:
+                        - path
+                    required:
+                    - secretStore
+                    - secretRef
+
+              # ============================================================
+              # Postgres superuser — optional. Omit the block to let CNPG
+              # auto-generate the superuser secret at `<cluster-name>-superuser`.
+              # Set when tooling needs the superuser password sourced from a
+              # specific secrets backend (e.g. schema migration platforms).
+              # ============================================================
+              superuser:
+                description: Optional postgres superuser credentials. Omit the block to let CNPG auto-generate the superuser secret.
+                type: object
+                properties:
+                  secretName:
+                    description: K8s Secret holding the superuser credentials. Defaults to "<cluster-name>-superuser".
+                    type: string
+                    default: ""
+                  externalSecret:
+                    description: Source the superuser credentials via External Secrets Operator. Omit to BYO the K8s Secret named `secretName`.
+                    type: object
+                    properties:
+                      secretStore:
+                        type: object
+                        properties:
+                          kind:
+                            type: string
+                            enum:
+                            - ClusterSecretStore
+                            - SecretStore
+                            default: ClusterSecretStore
+                          name:
+                            type: string
+                          namespace:
+                            type: string
+                        required:
+                        - name
+                      secretRef:
+                        type: object
+                        properties:
+                          path:
+                            type: string
+                        required:
+                        - path
+                    required:
+                    - secretStore
+                    - secretRef
 
               # ============================================================
               # Cross-stack integration toggles
@@ -204,5 +285,28 @@ spec:
               clusterPhase:
                 description: Current CNPG Cluster `.status.phase` (e.g. "Cluster in healthy state").
                 type: string
+              app:
+                description: Connection details for the application user. Other XRs can reference this to wire connection strings without hardcoding.
+                type: object
+                properties:
+                  secretName:
+                    description: K8s Secret holding the app role's credentials.
+                    type: string
+                  database:
+                    description: Application database name.
+                    type: string
+                  host:
+                    description: Service hostname for read-write connections (CNPG `<cluster>-rw` service).
+                    type: string
+                  port:
+                    description: Postgres port.
+                    type: integer
+              superuser:
+                description: Connection details for the postgres superuser.
+                type: object
+                properties:
+                  secretName:
+                    description: K8s Secret holding the superuser credentials (CNPG-managed if `spec.superuser` was not set).
+                    type: string
         required:
         - spec

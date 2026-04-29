@@ -4,12 +4,26 @@
 #
 
 {{- $xr := getCompositeResource . }}
+{{- /* CNPG always exposes the rw service at <cluster>-rw.<namespace>.svc.cluster.local */}}
+{{- $appHost := printf "%s-rw.%s.svc.cluster.local" $state.name $state.namespace }}
+{{- /* Superuser secret location: user-provided if opted in, else CNPG's auto-generated `<cluster>-superuser` */}}
+{{- $superuserSecretName := printf "%s-superuser" $state.name }}
+{{- if $state.superuser.enabled }}
+  {{- $superuserSecretName = $state.superuser.secretName }}
+{{- end }}
 ---
 apiVersion: {{ $xr.apiVersion }}
 kind: {{ $xr.kind }}
 status:
   ready: {{ $state.status.ready }}
   clusterPhase: {{ $state.status.clusterPhase | quote }}
+  app:
+    secretName: {{ $state.app.secretName | quote }}
+    database: {{ $state.app.database | quote }}
+    host: {{ $appHost | quote }}
+    port: 5432
+  superuser:
+    secretName: {{ $superuserSecretName | quote }}
   {{- if $state.warnings }}
   conditions:
     {{- range $i, $msg := $state.warnings }}

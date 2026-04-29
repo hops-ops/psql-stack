@@ -44,6 +44,14 @@ jobs:
 
   e2e:
     uses: unbounded-tech/workflows-crossplane/.github/workflows/e2e.yaml@feat/multi-api-support
+    with:
+      # Long chain: snapshot-controller install → PSQLStack Helm installs
+      # (CNPG + atlas + VolumeSnapshotClass) → PSQLCluster bootstraps a real
+      # Postgres → PSQLBranch snapshots + restores. With cold image pulls and
+      # the occasional rate-limit slowness on the kind node, 90 min is what
+      # this chain needs to converge reliably.
+      timeout-minutes: 90
+      cleanup-timeout-minutes: 30
 
   publish:
     needs:

@@ -76,27 +76,44 @@
 }}
 
 # ==============================================================================
-# Credentials
+# Application user — always present. Wires CNPG's bootstrap.initdb shape.
+# `externalSecret` is optional: when set, the composition renders an ESO
+# ExternalSecret pulling from the named (Cluster)SecretStore. When omitted,
+# the consumer is expected to pre-create the K8s Secret at `secretName`
+# (BYO mode).
 # ==============================================================================
-{{- $credSpec := ($spec.credentials | default dict).superuser | default dict }}
-{{- $credManagedBy := "hops-aws-secrets-manager" }}
-{{- if hasKey $credSpec "managedBy" }}
-  {{- $credManagedBy = $credSpec.managedBy }}
+{{- $appSpec := $spec.app | default dict }}
+{{- $appRole := $appSpec.role | default "app" }}
+{{- $appDatabase := $appSpec.database | default "app" }}
+{{- $appSecretName := $appSpec.secretName }}
+{{- if not $appSecretName }}
+  {{- $appSecretName = printf "%s-app" $name }}
 {{- end }}
-{{- $credSecretName := $credSpec.secretName }}
-{{- if not $credSecretName }}
-  {{- $credSecretName = printf "%s-superuser" $name }}
+{{- $app := dict
+  "role" $appRole
+  "database" $appDatabase
+  "secretName" $appSecretName
+  "externalSecret" ($appSpec.externalSecret | default dict)
+}}
+
+# ==============================================================================
+# Superuser — optional. Render only when the user explicitly opts in by
+# setting `spec.superuser.secretName` or `spec.superuser.externalSecret`.
+# Otherwise CNPG auto-generates the superuser secret at `<cluster>-superuser`.
+# ==============================================================================
+{{- $suSpec := $spec.superuser | default dict }}
+{{- $suEnabled := false }}
+{{- if or $suSpec.secretName $suSpec.externalSecret }}
+  {{- $suEnabled = true }}
 {{- end }}
-{{- $credRemoteKey := $credSpec.remoteKey }}
-{{- if not $credRemoteKey }}
-  {{- $credRemoteKey = printf "%s/superuser" $name }}
+{{- $suSecretName := $suSpec.secretName }}
+{{- if not $suSecretName }}
+  {{- $suSecretName = printf "%s-superuser" $name }}
 {{- end }}
-{{- $credentials := dict
-  "superuser" (dict
-    "managedBy" $credManagedBy
-    "secretName" $credSecretName
-    "remoteKey" $credRemoteKey
-  )
+{{- $superuser := dict
+  "enabled" $suEnabled
+  "secretName" $suSecretName
+  "externalSecret" ($suSpec.externalSecret | default dict)
 }}
 
 # ==============================================================================
@@ -151,7 +168,8 @@
   "instances" $instances
   "storage" $storage
   "postgresql" $postgresql
-  "credentials" $credentials
+  "app" $app
+  "superuser" $superuser
   "scaleToZero" $scaleToZero
   "branching" $branching
   "monitoring" $monitoring

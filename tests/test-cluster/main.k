@@ -10,12 +10,13 @@ import models.io.upbound.dev.meta.v1alpha1 as metav1alpha1
 
 _items = [
     # ==========================================================================
-    # Test 1: minimal claim renders Cluster + ExternalSecret with sensible
-    # defaults. Branching labels on by default, monitoring on, no plugins, no
-    # affinity, no custom storage class.
+    # Test 1: minimal claim renders only the Cluster — no ExternalSecret by
+    # default. Bootstrap wires the app role/database/secret with default names.
+    # Branching labels on by default, monitoring on, no plugins, no affinity,
+    # no custom storage class. (Consumer is in BYO mode for the app Secret.)
     # ==========================================================================
     metav1alpha1.CompositionTest {
-        metadata.name = "minimal-renders-cluster-and-secret"
+        metadata.name = "minimal-renders-cluster-only"
         spec = {
             compositionPath = "apis/psqlclusters/composition.yaml"
             xrdPath = "apis/psqlclusters/definition.yaml"
@@ -52,28 +53,10 @@ _items = [
                             bootstrap.initdb = {
                                 database = "app"
                                 owner = "app"
-                                secret.name = "test-app-superuser"
+                                secret.name = "test-app-app"
                             }
                             storage.size = "10Gi"
                             monitoring.enablePodMonitor = True
-                        }
-                    }
-                }
-                {
-                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
-                    kind = "Object"
-                    metadata.name = "test-app-external-secret"
-                    spec.forProvider.manifest = {
-                        apiVersion = "external-secrets.io/v1beta1"
-                        kind = "ExternalSecret"
-                        metadata.name = "test-app-superuser"
-                        spec = {
-                            refreshInterval = "1h"
-                            secretStoreRef = {
-                                name = "hops-aws-secrets-manager"
-                                kind = "ClusterSecretStore"
-                            }
-                            target.name = "test-app-superuser"
                         }
                     }
                 }
@@ -257,29 +240,58 @@ _items = [
     }
 
     # ==========================================================================
-    # Test 7: credentials.superuser.managedBy="" suppresses ExternalSecret.
+    # Test 7: app.externalSecret renders an ESO ExternalSecret pulling from
+    # the named ClusterSecretStore. Default behavior (Test 1) doesn't render
+    # one — this asserts the opt-in path.
     # ==========================================================================
     metav1alpha1.CompositionTest {
-        metadata.name = "no-managedby-skips-external-secret"
+        metadata.name = "external-secret-renders-when-opted-in"
         spec = {
             compositionPath = "apis/psqlclusters/composition.yaml"
             xrdPath = "apis/psqlclusters/definition.yaml"
             timeoutSeconds = 60
             validate = False
             xr = stacksv1alpha1.PSQLCluster {
-                metadata = {name = "byo-secret", namespace = "default"}
+                metadata = {name = "es-app", namespace = "default"}
                 spec = {
                     clusterName = "my-cluster"
                     storage = {size = "5Gi"}
-                    credentials.superuser.managedBy = ""
+                    app = {
+                        externalSecret = {
+                            secretStore = {
+                                kind = "ClusterSecretStore"
+                                name = "hops-aws-secrets-manager"
+                            }
+                            secretRef = {
+                                path = "my-cluster/es-app"
+                            }
+                        }
+                    }
                 }
             }
-            # Cluster still composed; ExternalSecret absent.
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                     kind = "Object"
-                    metadata.name = "byo-secret-cnpg-cluster"
+                    metadata.name = "es-app-cnpg-cluster"
+                }
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "es-app-external-secret-app"
+                    spec.forProvider.manifest = {
+                        apiVersion = "external-secrets.io/v1beta1"
+                        kind = "ExternalSecret"
+                        metadata.name = "es-app-app"
+                        spec = {
+                            refreshInterval = "1h"
+                            secretStoreRef = {
+                                name = "hops-aws-secrets-manager"
+                                kind = "ClusterSecretStore"
+                            }
+                            target.name = "es-app-app"
+                        }
+                    }
                 }
             ]
         }

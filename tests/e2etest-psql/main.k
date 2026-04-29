@@ -144,7 +144,8 @@ _items = [
             # Deleted during cleanup (unless --skip-delete).
             # ==============================================================
             manifests = [
-                # 1. PSQLStack — Helm-installs CNPG operator + atlas-operator + VolumeSnapshotClass
+                # 1. PSQLStack — Helm-installs CNPG operator + atlas-operator + VolumeSnapshotClass.
+                # Defaults: namespace=cnpg-system, ProviderConfigs default to clusterName.
                 hopsv1alpha1.PSQLStack {
                     metadata = {
                         name = _test_name
@@ -152,7 +153,6 @@ _items = [
                     }
                     spec = {
                         clusterName = "default"
-                        namespace = "stackgres"
                         labels = {
                             "hops.ops.com.ai/e2etest" = "true"
                             "hops.ops.com.ai/test-run" = _now
@@ -161,15 +161,9 @@ _items = [
                             name = "default"
                             kind = "ProviderConfig"
                         }
-                        # Minimal resource requests for kind cluster
-                        stackgresOperator.values = {
-                            deploy = {
-                                operator = True
-                                restapi = True
-                            }
-                        }
-                        atlasOperator.values = {
-                            prewarmDevDB = False
+                        kubernetesProviderConfigRef = {
+                            name = "default"
+                            kind = "ProviderConfig"
                         }
                     }
                 }

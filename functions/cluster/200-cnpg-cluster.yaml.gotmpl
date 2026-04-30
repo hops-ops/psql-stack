@@ -61,16 +61,21 @@ spec:
       spec:
         {{- /* Build the Cluster.spec from intent-first state, then mergeOverwrite
                with $cnpg.values for fine-grained passthrough overrides. */}}
+        {{- /* When neither app.externalSecret nor an explicit app.secretName
+               is set, omit bootstrap.initdb.secret so CNPG auto-generates and
+               owns a basic-auth Secret at <cluster-name>-app. Otherwise point
+               CNPG at the secret the consumer or ESO is providing. */}}
+        {{- $initdb := dict
+          "database" $state.app.database
+          "owner" $state.app.role
+        }}
+        {{- if not $state.app.cnpgManagedSecret }}
+          {{- $_ := set $initdb "secret" (dict "name" $state.app.secretName) }}
+        {{- end }}
         {{- $clusterSpec := dict
           "instances" $state.instances
           "imageName" (printf "ghcr.io/cloudnative-pg/postgresql:%s" $state.postgresql.version)
-          "bootstrap" (dict
-            "initdb" (dict
-              "database" $state.app.database
-              "owner" $state.app.role
-              "secret" (dict "name" $state.app.secretName)
-            )
-          )
+          "bootstrap" (dict "initdb" $initdb)
           "storage" (dict
             "size" $state.storage.size
           )

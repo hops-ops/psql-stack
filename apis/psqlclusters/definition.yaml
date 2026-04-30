@@ -104,10 +104,18 @@ spec:
               # ============================================================
               # Application user — the role your app connects as.
               #
-              # Common case: drop in `app.externalSecret` pointing at the
-              # platform's ClusterSecretStore and key. Or omit `externalSecret`
-              # entirely and pre-create the K8s Secret named `<secretName>`
-              # with `username`+`password` keys (BYO mode).
+              # Three modes, in order of typical use:
+              #   1. Omit `app` (or set only role/database) — CNPG generates a
+              #      basic-auth Secret named `<cluster-name>-app` and owns
+              #      its lifecycle. Zero-config; use for ephemeral or kind-only
+              #      setups.
+              #   2. Set `app.externalSecret` — composition renders an ESO
+              #      ExternalSecret pulling from the named (Cluster)SecretStore
+              #      and writes the K8s Secret CNPG reads. Common production
+              #      shape on platforms with External Secrets Operator wired up.
+              #   3. Set `app.secretName` (without `externalSecret`) — BYO; you
+              #      pre-create the named K8s Secret with `username`+`password`
+              #      keys before the cluster bootstraps.
               # ============================================================
               app:
                 description: Application user — the Postgres role your app connects as. CNPG uses these credentials for `bootstrap.initdb`.
@@ -122,11 +130,11 @@ spec:
                     type: string
                     default: app
                   secretName:
-                    description: K8s Secret holding the app role's credentials. Defaults to "<cluster-name>-app". With `externalSecret` set, the composition writes this Secret; otherwise pre-create it yourself.
+                    description: K8s Secret holding the app role's credentials. Setting this opts into BYO mode — pre-create the Secret with `username`+`password` keys. Leave unset (and omit `externalSecret`) to let CNPG auto-generate `<cluster-name>-app`.
                     type: string
                     default: ""
                   externalSecret:
-                    description: Source the credentials via External Secrets Operator. Omit to BYO the K8s Secret named `secretName`.
+                    description: Source the credentials via External Secrets Operator. Omit to either BYO the K8s Secret named `secretName`, or — when `secretName` is also unset — let CNPG auto-generate.
                     type: object
                     properties:
                       secretStore:

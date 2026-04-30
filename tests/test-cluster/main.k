@@ -11,9 +11,10 @@ import models.io.upbound.dev.meta.v1alpha1 as metav1alpha1
 _items = [
     # ==========================================================================
     # Test 1: minimal claim renders only the Cluster — no ExternalSecret by
-    # default. Bootstrap wires the app role/database/secret with default names.
-    # Branching labels on by default, monitoring on, no plugins, no affinity,
-    # no custom storage class. (Consumer is in BYO mode for the app Secret.)
+    # default. Bootstrap wires the app role/database; `secret` is omitted so
+    # CNPG auto-generates `<cluster-name>-app` and owns it. Branching labels
+    # on by default, monitoring on, no plugins, no affinity, no custom storage
+    # class.
     # ==========================================================================
     metav1alpha1.CompositionTest {
         metadata.name = "minimal-renders-cluster-only"
@@ -53,7 +54,6 @@ _items = [
                             bootstrap.initdb = {
                                 database = "app"
                                 owner = "app"
-                                secret.name = "test-app-app"
                             }
                             storage.size = "10Gi"
                             monitoring.enablePodMonitor = True
@@ -274,6 +274,11 @@ _items = [
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                     kind = "Object"
                     metadata.name = "es-app-cnpg-cluster"
+                    spec.forProvider.manifest.spec.bootstrap.initdb = {
+                        database = "app"
+                        owner = "app"
+                        secret.name = "es-app-app"
+                    }
                 }
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -335,7 +340,43 @@ _items = [
     }
 
     # ==========================================================================
-    # Test 9: kubernetesProviderConfigRef defaults to clusterName.
+    # Test 9: BYO mode — explicit `app.secretName` (no externalSecret) wires
+    # CNPG at the named Secret. Consumer is responsible for pre-creating it.
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "byo-secret-name-wires-cnpg-at-named-secret"
+        spec = {
+            compositionPath = "apis/psqlclusters/composition.yaml"
+            xrdPath = "apis/psqlclusters/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLCluster {
+                metadata = {name = "byo-app", namespace = "default"}
+                spec = {
+                    clusterName = "my-cluster"
+                    storage = {size = "5Gi"}
+                    app = {
+                        secretName = "my-precreated-secret"
+                    }
+                }
+            }
+            assertResources = [
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "byo-app-cnpg-cluster"
+                    spec.forProvider.manifest.spec.bootstrap.initdb = {
+                        database = "app"
+                        owner = "app"
+                        secret.name = "my-precreated-secret"
+                    }
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
+    # Test 10: kubernetesProviderConfigRef defaults to clusterName.
     # ==========================================================================
     metav1alpha1.CompositionTest {
         metadata.name = "k8s-provider-config-defaults-to-cluster-name"

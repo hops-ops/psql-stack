@@ -77,23 +77,33 @@
 
 # ==============================================================================
 # Application user — always present. Wires CNPG's bootstrap.initdb shape.
-# `externalSecret` is optional: when set, the composition renders an ESO
-# ExternalSecret pulling from the named (Cluster)SecretStore. When omitted,
-# the consumer is expected to pre-create the K8s Secret at `secretName`
-# (BYO mode).
+# Three modes:
+#   - Neither `externalSecret` nor `secretName` set → CNPG auto-generates
+#     a Secret named `<cluster-name>-app` and owns its lifecycle. Composition
+#     omits `bootstrap.initdb.secret` so CNPG fills it in. `cnpgManagedSecret`
+#     flag drives the omission downstream.
+#   - `externalSecret` set → composition renders an ESO ExternalSecret that
+#     writes the K8s Secret CNPG reads.
+#   - `secretName` set (without `externalSecret`) → BYO; consumer pre-creates
+#     the named Secret with `username`+`password`.
 # ==============================================================================
 {{- $appSpec := $spec.app | default dict }}
 {{- $appRole := $appSpec.role | default "app" }}
 {{- $appDatabase := $appSpec.database | default "app" }}
-{{- $appSecretName := $appSpec.secretName }}
+{{- $appExternalSecret := $appSpec.externalSecret | default dict }}
+{{- $appExternalSecretSet := and $appExternalSecret.secretStore $appExternalSecret.secretRef }}
+{{- $appSecretNameRaw := $appSpec.secretName }}
+{{- $appSecretName := $appSecretNameRaw }}
 {{- if not $appSecretName }}
   {{- $appSecretName = printf "%s-app" $name }}
 {{- end }}
+{{- $appCNPGManagedSecret := and (not $appSecretNameRaw) (not $appExternalSecretSet) }}
 {{- $app := dict
   "role" $appRole
   "database" $appDatabase
   "secretName" $appSecretName
-  "externalSecret" ($appSpec.externalSecret | default dict)
+  "cnpgManagedSecret" $appCNPGManagedSecret
+  "externalSecret" $appExternalSecret
 }}
 
 # ==============================================================================

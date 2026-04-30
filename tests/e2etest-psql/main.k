@@ -186,8 +186,8 @@ _items = [
                             kind = "ProviderConfig"
                         }
                         storage = {size = "1Gi"}
-                        # Skip ExternalSecret in e2e — no ESO ClusterSecretStore in kind harness.
-                        app.managedBy = ""
+                        # Omit `app` entirely — no ESO in kind, no pre-created
+                        # secret. CNPG auto-generates `<cluster>-app`.
                     }
                 }
                 # 3. PSQLBranch — ephemeral fork. Snapshots the source

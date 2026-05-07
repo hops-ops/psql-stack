@@ -17,13 +17,18 @@ spec:
         description: |
           PSQLStack is the platform layer for Postgres-on-Kubernetes. It composes
           CloudNativePG (the operator), the cnpg-i-scale-to-zero plugin, the Atlas
-          Operator (declarative schema migrations), and a VolumeSnapshotClass that
-          PSQLBranch uses as a stable target for forking primaries.
+          Operator (declarative schema migrations), a `psql` StorageClass that
+          PSQLClusters and PSQLBranches default to, and a `psql` VolumeSnapshotClass
+          that PSQLBranch uses as a stable target for forking primaries.
 
-          The stack is intentionally OS-agnostic and storage-agnostic — it relies
-          on whatever CSI driver and StorageClass the target cluster already
-          provides (e.g., gp3 on EKS Auto Mode, standard on kind/k3d). Per-app
-          serving clusters live in PSQLCluster; ephemeral forks in PSQLBranch.
+          The StorageClass + VolumeSnapshotClass are paired by design: snapshots
+          can only be taken of PVCs whose CSI driver matches the snapshot driver,
+          so the stack composes both with the same driver and exposes them under
+          the shared name `psql`. Default driver is `ebs.csi.eks.amazonaws.com`
+          (EKS Auto Mode); override `storageClass.provisioner` + `snapshotClass.driver`
+          together for non-EKS targets (e.g. `hostpath.csi.k8s.io` for kind tests,
+          `driver.longhorn.io` for self-managed). Per-app serving clusters live in
+          PSQLCluster; ephemeral forks in PSQLBranch.
         type: object
         properties:
           spec:
@@ -144,17 +149,67 @@ spec:
                     description: Helm values that replace all defaults for this component.
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
+              storageClass:
+                description: |
+                  StorageClass that PSQLCluster and PSQLBranch default their PVCs to.
+                  Pairs with `snapshotClass` — VolumeSnapshot only works when the
+                  snapshotter driver matches the StorageClass provisioner, so the
+                  stack composes both with the same CSI driver under the shared
+                  name "psql". Default provisioner is `ebs.csi.eks.amazonaws.com`
+                  with `type: gp3` parameters (EKS Auto Mode's managed driver).
+                  For non-EKS targets, override `provisioner` + `parameters` to
+                  match (e.g. `hostpath.csi.k8s.io` with empty parameters for kind,
+                  `driver.longhorn.io` for self-managed Longhorn).
+                type: object
+                properties:
+                  enabled:
+                    description: Compose the StorageClass. Defaults to true.
+                    type: boolean
+                    default: true
+                  name:
+                    description: StorageClass name. Defaults to "psql" — PSQLCluster + PSQLBranch reference this name.
+                    type: string
+                    default: psql
+                  provisioner:
+                    description: CSI driver name. Defaults to ebs.csi.eks.amazonaws.com (EKS Auto Mode). Must match snapshotClass.driver for VolumeSnapshot to work.
+                    type: string
+                    default: ebs.csi.eks.amazonaws.com
+                  reclaimPolicy:
+                    description: Reclaim policy. Defaults to Delete.
+                    type: string
+                    enum:
+                    - Delete
+                    - Retain
+                    default: Delete
+                  volumeBindingMode:
+                    description: Volume binding mode. Defaults to WaitForFirstConsumer (matches EKS Auto Mode's gp3 default and is correct for zonal CSI drivers).
+                    type: string
+                    enum:
+                    - Immediate
+                    - WaitForFirstConsumer
+                    default: WaitForFirstConsumer
+                  allowVolumeExpansion:
+                    description: Allow online PVC expansion. Defaults to true (CNPG resizes via the same field on the Cluster CR).
+                    type: boolean
+                    default: true
+                  parameters:
+                    description: |
+                      Provisioner-specific parameters. Defaults to `{type: gp3}` for
+                      the EBS provisioner. When overriding `provisioner`, set this
+                      to whatever the new provisioner expects (e.g. `{}` for
+                      hostpath.csi.k8s.io, driver-specific keys for Longhorn).
+                    type: object
+                    additionalProperties:
+                      type: string
+                    x-kubernetes-preserve-unknown-fields: true
               snapshotClass:
                 description: |
-                  VolumeSnapshotClass used by PSQLBranch as its forking target. The
-                  stack composes exactly one VolumeSnapshotClass with `name` defaulting
-                  to "psql" (PSQLBranch references it by name). The default driver is
-                  `ebs.csi.eks.amazonaws.com` (EKS Auto Mode's managed EBS CSI driver);
-                  override `driver` for other providers (e.g. `ebs.csi.aws.com` for
-                  self-managed EBS, `driver.longhorn.io`, `hostpath.csi.k8s.io`).
-                  PSQLClusters target whatever StorageClass the cluster already
-                  provides (Auto Mode ships gp3 by default) — the stack does not
-                  compose a StorageClass.
+                  VolumeSnapshotClass that PSQLBranch references when forking a
+                  PSQLCluster's PVC. Pairs with `storageClass`: the driver must
+                  match the StorageClass provisioner. Default driver is
+                  `ebs.csi.eks.amazonaws.com` (EKS Auto Mode); override for
+                  other CSI providers (`hostpath.csi.k8s.io` on kind,
+                  `driver.longhorn.io` for self-managed Longhorn, etc.).
                 type: object
                 properties:
                   enabled:
@@ -166,7 +221,7 @@ spec:
                     type: string
                     default: psql
                   driver:
-                    description: CSI driver. Defaults to ebs.csi.eks.amazonaws.com (EKS Auto Mode's managed EBS CSI driver). For self-managed EBS use ebs.csi.aws.com; for non-AWS providers, use the appropriate driver name.
+                    description: CSI driver. Defaults to ebs.csi.eks.amazonaws.com. Must match storageClass.provisioner.
                     type: string
                     default: ebs.csi.eks.amazonaws.com
                   deletionPolicy:
@@ -189,7 +244,7 @@ spec:
             type: object
             properties:
               ready:
-                description: Overall readiness — true once every enabled component is Ready (CNPG, Atlas, the scale-to-zero plugin if `scaleToZeroPlugin.enabled`, and the VolumeSnapshotClass if `snapshotClass.enabled`). Disabled components are treated as Ready.
+                description: Overall readiness — true once every enabled component is Ready (CNPG, Atlas, the scale-to-zero plugin if `scaleToZeroPlugin.enabled`, the StorageClass if `storageClass.enabled`, and the VolumeSnapshotClass if `snapshotClass.enabled`). Disabled components are treated as Ready.
                 type: boolean
         required:
         - spec

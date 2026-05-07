@@ -70,16 +70,16 @@ spec:
                 type: integer
                 default: 1
               storage:
-                description: Postgres data PVC sizing. Online expansion is supported by CNPG when allowVolumeExpansion is true on the StorageClass (gp3 default on EKS Auto Mode) — bumping `size` upward grows the volume in place with no downtime.
+                description: Postgres data PVC sizing. Online expansion is supported by CNPG when allowVolumeExpansion is true on the StorageClass (the stack's `psql` SC sets this) — bumping `size` upward grows the volume in place with no downtime.
                 type: object
                 properties:
                   size:
                     description: PVC size, e.g. "10Gi". Required.
                     type: string
                   class:
-                    description: StorageClass name. Empty = cluster default (gp3 on Auto Mode).
+                    description: StorageClass name. Defaults to "psql" — the StorageClass composed by PSQLStack. Override only to opt out of the stack's paired SC + VSC (e.g. for a different driver on the same cluster).
                     type: string
-                    default: ""
+                    default: psql
                 required:
                 - size
 

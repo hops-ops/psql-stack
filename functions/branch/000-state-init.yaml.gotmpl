@@ -69,7 +69,7 @@
   "instances" ($branchSpec.instances | default 1)
   "storage" (dict
     "size" $branchSize
-    "class" ($branchStorageSpec.class | default "")
+    "class" ($branchStorageSpec.class | default "psql")
   )
 }}
 

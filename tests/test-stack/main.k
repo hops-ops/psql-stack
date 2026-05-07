@@ -12,8 +12,8 @@ import models.io.upbound.dev.meta.v1alpha1 as metav1alpha1
 _items = [
     # ==========================================================================
     # Test 1: minimal claim renders the platform operators (CNPG, Atlas), the
-    # scale-to-zero plugin (default-on), and the VolumeSnapshotClass
-    # (default driver: ebs.csi.aws.com, default name: "psql").
+    # scale-to-zero plugin (default-on), the StorageClass and VolumeSnapshotClass
+    # (default name: "psql", paired driver/provisioner: ebs.csi.eks.amazonaws.com).
     # ==========================================================================
     metav1alpha1.CompositionTest {
         metadata.name = "minimal-renders-platform-stack"
@@ -36,6 +36,11 @@ _items = [
                     apiVersion = "helm.m.crossplane.io/v1beta1"
                     kind = "Release"
                     metadata.name = "atlas-operator"
+                }
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "test-psql-storageclass"
                 }
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -295,7 +300,7 @@ _items = [
                     scaleToZeroPlugin = {enabled = False}
                 }
             }
-            # Positive presence: cnpg + atlas + VSC still composed.
+            # Positive presence: cnpg + atlas + SC + VSC still composed.
             # Absence of s2z-* resources is implicit (composition gates them).
             assertResources = [
                 {
@@ -307,6 +312,11 @@ _items = [
                     apiVersion = "helm.m.crossplane.io/v1beta1"
                     kind = "Release"
                     metadata.name = "atlas-operator"
+                }
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "no-s2z-storageclass"
                 }
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -412,7 +422,7 @@ _items = [
                     snapshotClass = {enabled = False}
                 }
             }
-            # Cnpg + atlas still composed. No vsc-* Object expected (implicit).
+            # Cnpg + atlas + SC still composed. No vsc-* Object expected (implicit).
             assertResources = [
                 {
                     apiVersion = "helm.m.crossplane.io/v1beta1"
@@ -423,6 +433,101 @@ _items = [
                     apiVersion = "helm.m.crossplane.io/v1beta1"
                     kind = "Release"
                     metadata.name = "atlas-operator"
+                }
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "no-vsc-storageclass"
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
+    # Test 12: storageClass settings flow through to the composed StorageClass.
+    # Override provisioner + parameters to verify they propagate (e.g., for
+    # non-EKS targets that use a different CSI driver).
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "storageclass-provisioner-flows-through"
+        spec = {
+            compositionPath = "apis/psqlstacks/composition.yaml"
+            xrdPath = "apis/psqlstacks/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLStack {
+                metadata.name = "sc-tweaks"
+                spec = {
+                    clusterName = "my-cluster"
+                    storageClass = {
+                        provisioner = "driver.longhorn.io"
+                        parameters = {numberOfReplicas = "3"}
+                        reclaimPolicy = "Retain"
+                    }
+                }
+            }
+            assertResources = [
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "sc-tweaks-storageclass"
+                    spec.forProvider.manifest = {
+                        apiVersion = "storage.k8s.io/v1"
+                        kind = "StorageClass"
+                        metadata = {
+                            name = "psql"
+                            labels = {
+                                "hops.ops.com.ai/managed" = "true"
+                                "hops.ops.com.ai/psql" = "sc-tweaks"
+                            }
+                        }
+                        provisioner = "driver.longhorn.io"
+                        reclaimPolicy = "Retain"
+                        volumeBindingMode = "WaitForFirstConsumer"
+                        allowVolumeExpansion = True
+                        parameters = {numberOfReplicas = "3"}
+                    }
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
+    # Test 13: storageClass.enabled=false suppresses the SC composition.
+    # Use case: cluster already ships a suitable default SC; opt out of the
+    # stack composing one. PSQLCluster/PSQLBranch consumers must then set
+    # `spec.storage.class` explicitly.
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "storageclass-can-be-disabled"
+        spec = {
+            compositionPath = "apis/psqlstacks/composition.yaml"
+            xrdPath = "apis/psqlstacks/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLStack {
+                metadata.name = "no-sc"
+                spec = {
+                    clusterName = "my-cluster"
+                    storageClass = {enabled = False}
+                }
+            }
+            # Cnpg + atlas + VSC still composed. No sc-* Object expected (implicit).
+            assertResources = [
+                {
+                    apiVersion = "helm.m.crossplane.io/v1beta1"
+                    kind = "Release"
+                    metadata.name = "cloudnative-pg"
+                }
+                {
+                    apiVersion = "helm.m.crossplane.io/v1beta1"
+                    kind = "Release"
+                    metadata.name = "atlas-operator"
+                }
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "no-sc-volumesnapshotclass"
                 }
             ]
         }

@@ -63,7 +63,7 @@
 {{- $storageSpec := $spec.storage }}
 {{- $storage := dict
   "size" $storageSpec.size
-  "class" ($storageSpec.class | default "")
+  "class" ($storageSpec.class | default "psql")
 }}
 
 # ==============================================================================

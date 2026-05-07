@@ -1,16 +1,13 @@
 # psql-stack
 
-PostgreSQL platform layer on top of [CloudNativePG](https://cloudnative-pg.io/). Composes the CNPG operator, the [`cnpg-i-scale-to-zero` plugin](https://github.com/xataio/cnpg-i-scale-to-zero), the [Atlas Operator](https://atlasgo.io/integrations/kubernetes/operator) (declarative schema migrations), and a `VolumeSnapshotClass` that PSQLBranch uses as a stable forking target.
+PostgreSQL platform layer on top of [CloudNativePG](https://cloudnative-pg.io/). Composes the CNPG operator, the [`cnpg-i-scale-to-zero` plugin](https://github.com/xataio/cnpg-i-scale-to-zero), the [Atlas Operator](https://atlasgo.io/integrations/kubernetes/operator) (declarative schema migrations), a paired `psql` `StorageClass` + `VolumeSnapshotClass` that PSQLClusters and PSQLBranches default to.
 
 This is the **platform layer** — it does not create any serving Postgres clusters. Per-app DBs live in [`PSQLCluster`](../../psql-cluster/), ephemeral forks in [`PSQLBranch`](../../psql-branch/).
 
 ## Design
 
-The stack is intentionally **OS-agnostic and storage-agnostic**:
-
-- **No StorageClass.** PSQLClusters target whatever StorageClass the cluster already provides (`gp3` on EKS Auto Mode, `standard` on kind/k3d, etc.).
+- **Paired StorageClass + VolumeSnapshotClass, both named `psql`.** Snapshots only work when the snapshotter driver matches the underlying StorageClass provisioner, so the stack composes both with the same CSI driver value. PSQLClusters and PSQLBranches default `spec.storage.class: psql` (XRD default), so consumer manifests don't have to know the driver. Default driver/provisioner is `ebs.csi.eks.amazonaws.com` (EKS Auto Mode); override `storageClass.provisioner` + `snapshotClass.driver` together for non-EKS targets (kind, self-managed Longhorn, etc.).
 - **No NodePool / node-prep.** Components run wherever the cluster's scheduler puts them. Auto Mode handles node provisioning end-to-end.
-- **Single composed snapshot target.** The stack ships a `VolumeSnapshotClass` named `psql` so PSQLBranch can request snapshots without leaking driver-specific knowledge into PSQLBranch's spec. Default driver is `ebs.csi.eks.amazonaws.com` (EKS Auto Mode's managed EBS CSI driver); override for non-AWS clusters or self-managed EBS.
 
 If you need replicated CoW storage (true block-level branches with delta-only economics), that's a separate concern — see `aws-storage-stack` for self-managed nodes that can host Longhorn or similar. The default psql-stack stays on the AWS-blessed Auto Mode path.
 
@@ -21,12 +18,13 @@ If you need replicated CoW storage (true block-level branches with delta-only ec
 | **CNPG operator** | always-on | The CNCF Postgres operator. CRDs include `Cluster`, `Backup`, `Pooler`, `ScheduledBackup`. |
 | **cnpg-i-scale-to-zero plugin** | on (`spec.scaleToZeroPlugin.enabled: true`) | Auto-hibernates idle CNPG `Cluster`s. **Requires cert-manager** (provided by [`aws-cert-stack`](../../aws/cert/)). |
 | **Atlas operator** | always-on | Declarative schema migrations via `AtlasMigration` / `AtlasSchema` CRDs. |
-| **VolumeSnapshotClass** | on (`spec.snapshotClass.enabled: true`) | Named `psql` by default. Driver: `ebs.csi.eks.amazonaws.com`. PSQLBranch references this name. |
+| **StorageClass** | on (`spec.storageClass.enabled: true`) | Named `psql` by default. Provisioner: `ebs.csi.eks.amazonaws.com` with `type: gp3`. PSQLCluster + PSQLBranch reference it as their default `spec.storage.class`. |
+| **VolumeSnapshotClass** | on (`spec.snapshotClass.enabled: true`) | Named `psql` by default. Driver matches `storageClass.provisioner`. PSQLBranch references it for snapshot/fork. |
 | **HA mode** | off (`spec.ha.enabled: false`) | When enabled: 3 replicas + `topologySpreadConstraints` by zone on CNPG, Atlas, S2Z plugin. |
 
 ## Prerequisites
 
-- **A working CSI driver + StorageClass** on the cluster. EKS Auto Mode provides `ebs.csi.eks.amazonaws.com` automatically. For kind/k3d, the bundled `standard` SC works.
+- **A working CSI driver** on the cluster matching `storageClass.provisioner`. EKS Auto Mode provides `ebs.csi.eks.amazonaws.com` automatically. For other targets, override `storageClass.provisioner` (and the matching `snapshotClass.driver`) to whatever the target cluster has — e.g. `hostpath.csi.k8s.io` for kind, `driver.longhorn.io` for self-managed Longhorn.
 - **VolumeSnapshot CRDs + snapshot-controller** (`snapshot.storage.k8s.io`). EKS Auto Mode ships the snapshot CRDs but **not** the cluster-wide snapshot-controller. Without one, the composed VolumeSnapshotClass is inert and PSQLBranch snapshots will never reach `ReadyToUse`. Install [`volume-snapshot-stack`](../volume-snapshot/) (also in this org) — it composes the upstream snapshot-controller via the piraeus-charts Helm chart and is the canonical CRD installer for the cluster.
 - **cert-manager** (only when `scaleToZeroPlugin.enabled` — the plugin uses cert-manager Issuer+Certificate for its gRPC TLS). Provided by [`aws-cert-stack`](../../aws/cert/).
 
@@ -70,9 +68,9 @@ spec:
       prewarmDevDB: true
 ```
 
-### Stage 3: Non-AWS / non-EBS cluster
+### Stage 3: Non-EKS cluster
 
-Override the snapshot driver (e.g. for a self-managed cluster running Longhorn, or a local cluster using hostpath CSI).
+Override the SC + VSC driver together (they must match for snapshots to work). Example: self-managed cluster running Longhorn.
 
 ```yaml
 apiVersion: hops.ops.com.ai/v1alpha1
@@ -84,11 +82,33 @@ spec:
   clusterName: edge
   helmProviderConfigRef:
     name: default
+  storageClass:
+    provisioner: driver.longhorn.io
+    parameters:
+      numberOfReplicas: "3"
   snapshotClass:
     driver: driver.longhorn.io
 ```
 
-### Stage 4: Local / no-snapshot cluster
+### Stage 4: Opt out of the composed StorageClass
+
+If the cluster already ships a suitable default StorageClass, disable composition and have PSQLCluster/PSQLBranch consumers set `spec.storage.class` explicitly.
+
+```yaml
+apiVersion: hops.ops.com.ai/v1alpha1
+kind: PSQLStack
+metadata:
+  name: psql
+  namespace: default
+spec:
+  clusterName: shared-cluster
+  helmProviderConfigRef:
+    name: default
+  storageClass:
+    enabled: false
+```
+
+### Stage 5: Local / no-snapshot cluster
 
 For dev clusters without a snapshot-controller, disable the VSC composition. PSQLBranch won't function (it needs the VSC), but PSQLCluster still works.
 
@@ -138,10 +158,18 @@ spec:
 | `atlasOperator.namespace` | string | shared `namespace` | Override |
 | `atlasOperator.values` | object | — | Helm values merged with chart defaults |
 | `atlasOperator.overrideAllValues` | object | — | Helm values that replace all defaults |
+| **Storage class** | | | |
+| `storageClass.enabled` | bool | `true` | Compose the StorageClass |
+| `storageClass.name` | string | `psql` | StorageClass name (PSQLCluster + PSQLBranch reference this) |
+| `storageClass.provisioner` | string | `ebs.csi.eks.amazonaws.com` | CSI driver name. Must match `snapshotClass.driver` |
+| `storageClass.reclaimPolicy` | enum | `Delete` | `Delete` or `Retain` |
+| `storageClass.volumeBindingMode` | enum | `WaitForFirstConsumer` | `Immediate` or `WaitForFirstConsumer` |
+| `storageClass.allowVolumeExpansion` | bool | `true` | Online PVC expansion (CNPG resizes via the same field on its `Cluster` CR) |
+| `storageClass.parameters` | object | `{type: gp3}` | Provisioner-specific parameters |
 | **Snapshot class** | | | |
 | `snapshotClass.enabled` | bool | `true` | Compose the VolumeSnapshotClass |
 | `snapshotClass.name` | string | `psql` | VolumeSnapshotClass name (PSQLBranch references this) |
-| `snapshotClass.driver` | string | `ebs.csi.eks.amazonaws.com` | CSI driver (Auto Mode default; override for self-managed EBS or non-AWS) |
+| `snapshotClass.driver` | string | `ebs.csi.eks.amazonaws.com` | CSI driver. Must match `storageClass.provisioner` |
 | `snapshotClass.deletionPolicy` | enum | `Delete` | `Delete` or `Retain` |
 | `snapshotClass.parameters` | object | — | Driver-specific parameters |
 
@@ -152,6 +180,7 @@ spec:
 | `cloudnative-pg` | `helm.m.crossplane.io/Release` | always |
 | `atlas-operator` | `helm.m.crossplane.io/Release` | always |
 | 9× `<name>-s2z-*` | `kubernetes.m.crossplane.io/Object` | `scaleToZeroPlugin.enabled: true` |
+| `<name>-storageclass` | `kubernetes.m.crossplane.io/Object` | `storageClass.enabled: true` |
 | `<name>-volumesnapshotclass` | `kubernetes.m.crossplane.io/Object` | `snapshotClass.enabled: true` |
 | Various `Usage` | `protection.crossplane.io/Usage` | when both ends Ready (deletion ordering) |
 

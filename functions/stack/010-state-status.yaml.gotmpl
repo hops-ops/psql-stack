@@ -10,7 +10,7 @@
 # ==============================================================================
 
 {{- $checkReady := dict }}
-{{- range $key := list "cnpg-operator" "cnpg-scale-to-zero" "atlas-operator" "volumesnapshotclass" }}
+{{- range $key := list "cnpg-operator" "cnpg-scale-to-zero" "atlas-operator" "storageclass" "volumesnapshotclass" }}
   {{- $entry := get $observed $key | default dict }}
   {{- $resource := $entry.resource | default dict }}
   {{- $status := $resource.status | default dict }}
@@ -30,6 +30,7 @@
   "cnpg" (dict "ready" (get $checkReady "cnpg-operator"))
   "scaleToZeroPlugin" (dict "ready" (get $checkReady "cnpg-scale-to-zero"))
   "atlasOperator" (dict "ready" (get $checkReady "atlas-operator"))
+  "storageClass" (dict "ready" (get $checkReady "storageclass"))
   "snapshotClass" (dict "ready" (get $checkReady "volumesnapshotclass"))
 ) }}
 

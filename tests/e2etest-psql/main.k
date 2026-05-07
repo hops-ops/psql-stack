@@ -1,38 +1,55 @@
+import base64
+import file
 import datetime
 import math
 import models.ai.com.ops.hops.v1alpha1 as hopsv1alpha1
 import models.io.upbound.dev.meta.v1alpha1 as metav1alpha1
 
 # ==============================================================================
-# Unified E2E Test for psql-stack package — full Ready integration
+# Unified E2E Test for psql-stack — full Ready integration on a real EKS cluster.
 #
-# Exercises all three XRs in the package end-to-end:
-#   - PSQLStack    (installs CNPG operator + atlas-operator via Helm)
-#   - PSQLCluster  (per-app Postgres XR; composes a CNPG Cluster CR + ExternalSecret)
-#   - PSQLBranch   (ephemeral fork; composes VolumeSnapshot + bootstrapped CNPG Cluster)
+# Local-fidelity pattern (mirrors aws-observe-stack): the kind cluster the
+# runner spins up is the *management* cluster. The actual XRs target an
+# ephemeral EKS Auto Mode cluster provisioned during the test, where the
+# `psql` StorageClass + VolumeSnapshotClass composed by PSQLStack land on a
+# real `ebs.csi.eks.amazonaws.com` driver — same code path that runs on
+# pat-local. No fake CSI on kind; snapshots and forks actually work.
 #
-# Bar: defaultConditions = ["Ready"]. The chain is:
-#   1. snapshot-controller installed via VolumeSnapshotStack (initResources +
-#      extraResources VolumeSnapshotStack XR)
-#   2. PSQLStack reconciles → Helm-installs CNPG + atlas-operator + a
-#      VolumeSnapshotClass that PSQLBranch uses as its forking target
-#   3. PSQLCluster reconciles → CNPG provisions a real Postgres cluster (the
-#      operator is now live) with a real PVC
-#   4. PSQLBranch reconciles → snapshots the source cluster's PVC, restores
-#      into a new CNPG cluster (snapshot-controller is now live)
-#
-# Pattern mirrors aws-observe-stack's e2e: install dependent Configuration
-# packages via initResources, materialize their XRs in extraResources, then
-# the manifests under test depend on them.
+# Chain:
+#   1. extraResources: AutoEKSCluster XR provisions the EKS cluster
+#      (subnets reused from the persistent hops-test network created by the
+#      aws-network e2e test). aws-auto-eks-cluster auto-creates Helm +
+#      Kubernetes ProviderConfigs named after the cluster.
+#   2. extraResources: VolumeSnapshotStack XR installs the cluster-wide
+#      snapshot-controller via Helm into the new cluster.
+#   3. manifests: PSQLStack reconciles → Helm-installs CNPG + Atlas + S2Z +
+#      `psql` StorageClass + `psql` VolumeSnapshotClass.
+#   4. manifests: PSQLCluster reconciles → CNPG provisions a real Postgres
+#      cluster on a real EBS-backed PVC.
+#   5. manifests: PSQLBranch reconciles → snapshots the source PVC via the
+#      composed `psql` VSC, restores into a new CNPG cluster bootstrapped
+#      from the snapshot.
 #
 # Run: make e2e
 # Run without cleanup: up test run tests/e2etest-psql --e2e --skip-control-plane-cleanup
 # ==============================================================================
 
+# Workflow writes credentials + env vars to these files (write-env-files: true).
+_creds = file.read("secrets/aws-creds")
+_base64_creds = base64.encode(_creds)
+_region = file.read("env/AWS_REGION").strip()
+_account_id = file.read("env/AWS_ACCOUNT_ID").strip()
+_admin_role_arn = file.read("env/ADMIN_ROLE_ARN").strip()
+_private_subnet_ids = [
+    file.read("env/PRIVATE_SUBNET_ID_A").strip()
+    file.read("env/PRIVATE_SUBNET_ID_B").strip()
+]
+
 _now = str(int(math.floor(datetime.ticks())))
 _test_name = "e2e-psql-" + _now
 _cluster_name = "e2e-psql-cluster-" + _now
 _branch_name = "e2e-psql-branch-" + _now
+_namespace = "default"
 
 _items = [
     metav1alpha1.E2ETest {
@@ -42,172 +59,258 @@ _items = [
                 autoUpgrade.channel = "Rapid"
             }
             defaultConditions = ["Ready"]
-            # 90 minutes — long chain: snapshot-controller install → PSQLStack
-            # Helm install (CNPG + atlas + VolumeSnapshotClass) → PSQLCluster
-            # bootstraps a real Postgres → PSQLBranch snapshots + restores.
+            # 90 minutes — EKS Auto Mode cold start is ~10–15min; CNPG bootstrap
+            # + snapshot fork add another ~10min on top of the platform install.
             timeoutSeconds = 5400
+            # 30 minutes for cleanup (delete-extra-resources tears the cluster
+            # down; that takes ~10–15min on its own).
             cleanupTimeoutSeconds = 1800
             skipDelete = False
 
-            # ==============================================================
+            # ==================================================================
             # initResources: dependency Configuration packages
             # Installed BEFORE manifests, NOT deleted during cleanup.
-            # ==============================================================
+            # ==================================================================
             initResources = [
-                # volume-snapshot-stack — provides the cluster-wide
-                # snapshot-controller that PSQLBranch's VolumeSnapshot
-                # children rely on. EKS Auto Mode + colima ship the snapshot
-                # CRDs but no controller; this stack closes that gap.
+                # aws-auto-eks-cluster — provides the AutoEKSCluster XRD.
                 {
                     apiVersion = "pkg.crossplane.io/v1"
                     kind = "Configuration"
-                    metadata = {
-                        name = "hops-ops-volume-snapshot-stack"
-                    }
-                    spec = {
-                        package = "ghcr.io/hops-ops/volume-snapshot-stack:v0.1.0"
-                    }
+                    metadata.name = "aws-auto-eks-cluster"
+                    spec.package = "ghcr.io/hops-ops/aws-auto-eks-cluster:v0.11.0"
+                }
+                # volume-snapshot-stack — provides the VolumeSnapshotStack XRD
+                # (installs the cluster-wide snapshot-controller). PSQLBranch's
+                # VolumeSnapshot only reaches readyToUse=true with this running.
+                {
+                    apiVersion = "pkg.crossplane.io/v1"
+                    kind = "Configuration"
+                    metadata.name = "hops-ops-volume-snapshot-stack"
+                    spec.package = "ghcr.io/hops-ops/volume-snapshot-stack:v0.1.0"
                 }
             ]
 
-            # ==============================================================
-            # extraResources: RBAC + Provider configs + dependent XRs
-            # NOT deleted during cleanup.
-            # ==============================================================
+            # ==================================================================
+            # extraResources: AWS creds + ProviderConfigs + the EKS cluster XR
+            # itself. NOT deleted during cleanup (the cluster XR is torn down
+            # separately via delete-extra-resources in the workflow so it
+            # outlives the manifests' cascade delete).
+            # ==================================================================
             extraResources = [
-                # cluster-admin to all SAs in crossplane-system so Helm +
-                # Kubernetes providers can apply wrapped manifests freely.
+                # AWS credentials secret (sourced from the OIDC-assumed role).
                 {
-                    apiVersion = "rbac.authorization.k8s.io/v1"
-                    kind = "ClusterRoleBinding"
-                    metadata.name = "crossplane-system-cluster-admin"
-                    roleRef = {
-                        apiGroup = "rbac.authorization.k8s.io"
-                        kind = "ClusterRole"
-                        name = "cluster-admin"
+                    apiVersion = "v1"
+                    kind = "Secret"
+                    metadata = {
+                        name = "aws-creds"
+                        namespace = _namespace
                     }
-                    subjects = [
+                    data = {
+                        creds = _base64_creds
+                    }
+                }
+                # AWS ProviderConfig — for AutoEKSCluster's IAM/EKS resources.
+                {
+                    apiVersion = "aws.m.upbound.io/v1beta1"
+                    kind = "ProviderConfig"
+                    metadata = {
+                        name = "default"
+                        namespace = _namespace
+                    }
+                    spec = {
+                        credentials = {
+                            source = "Secret"
+                            secretRef = {
+                                namespace = _namespace
+                                name = "aws-creds"
+                                key = "creds"
+                            }
+                        }
+                    }
+                }
+                # Kubernetes ProviderConfig "default" — used by aws-auto-eks-cluster
+                # to apply the per-cluster Helm + Kubernetes ProviderConfigs into
+                # the management cluster (kind). Cluster-targeting XRs reference
+                # the per-cluster ProviderConfigs (named after _test_name).
+                {
+                    apiVersion: "kubernetes.m.crossplane.io/v1alpha1"
+                    kind: "ProviderConfig"
+                    metadata: {
+                        name: "default"
+                        namespace: "default"
+                    }
+                    spec: {
+                        credentials: {
+                            source: "InjectedIdentity"
+                        }
+                    }
+                }
+                # DeploymentRuntimeConfig for provider-kubernetes — gives the
+                # provider a known SA name we can grant cluster-admin on the
+                # management cluster.
+                {
+                    apiVersion: "pkg.crossplane.io/v1beta1"
+                    kind: "DeploymentRuntimeConfig"
+                    metadata: {
+                        name: "crossplane-contrib-provider-kubernetes"
+                    }
+                    spec: {
+                        serviceAccountTemplate: {
+                            metadata: {
+                                name: "crossplane-contrib-provider-kubernetes"
+                            }
+                        }
+                    }
+                }
+                {
+                    apiVersion: "v1"
+                    kind: "ServiceAccount"
+                    metadata: {
+                        name: "crossplane-contrib-provider-kubernetes"
+                        namespace: "crossplane-system"
+                    }
+                }
+                {
+                    apiVersion: "rbac.authorization.k8s.io/v1"
+                    kind: "ClusterRoleBinding"
+                    metadata: {
+                        name: "crossplane-contrib-provider-kubernetes-admin"
+                    }
+                    roleRef: {
+                        apiGroup: "rbac.authorization.k8s.io"
+                        kind: "ClusterRole"
+                        name: "cluster-admin"
+                    }
+                    subjects: [
                         {
-                            kind = "Group"
-                            name = "system:serviceaccounts:crossplane-system"
-                            apiGroup = "rbac.authorization.k8s.io"
+                            kind: "ServiceAccount"
+                            name: "crossplane-contrib-provider-kubernetes"
+                            namespace: "crossplane-system"
                         }
                     ]
                 }
-                # Helm ProviderConfig — for PSQLStack + VolumeSnapshotStack
+                # Pin the K8s provider so the runtime config takes effect.
                 {
-                    apiVersion = "helm.m.crossplane.io/v1beta1"
-                    kind = "ProviderConfig"
-                    metadata = {
-                        name = "default"
-                        namespace = "default"
+                    apiVersion: "pkg.crossplane.io/v1"
+                    kind: "Provider"
+                    metadata: {
+                        name: "crossplane-contrib-provider-kubernetes"
                     }
-                    spec = {
-                        credentials = {
-                            source = "InjectedIdentity"
+                    spec: {
+                        package: "xpkg.crossplane.io/crossplane-contrib/provider-kubernetes:v1.2.0"
+                        runtimeConfigRef: {
+                            name: "crossplane-contrib-provider-kubernetes"
                         }
                     }
                 }
-                # Kubernetes ProviderConfig — for PSQLCluster + PSQLBranch
+                # The ephemeral EKS cluster. Reuses the persistent hops-test
+                # network's private subnets so we don't pay VPC create cost
+                # per PR. AutoEKSCluster auto-creates Helm + Kubernetes
+                # ProviderConfigs named _test_name once Ready.
                 {
-                    apiVersion = "kubernetes.m.crossplane.io/v1beta1"
-                    kind = "ProviderConfig"
+                    apiVersion = "aws.hops.ops.com.ai/v1alpha1"
+                    kind = "AutoEKSCluster"
                     metadata = {
-                        name = "default"
-                        namespace = "default"
+                        name = _test_name
+                        namespace = _namespace
                     }
                     spec = {
-                        credentials = {
-                            source = "InjectedIdentity"
+                        adminRoleArn = _admin_role_arn
+                        clusterName = _test_name
+                        region = _region
+                        accountId = _account_id
+                        version = "1.35"
+                        subnetIds = _private_subnet_ids
+                        providerConfigRef = {
+                            name = "default"
+                            kind = "ProviderConfig"
+                        }
+                        kubernetesProviderConfigRef = {
+                            name = "default"
+                            kind = "ProviderConfig"
+                        }
+                        tags = {
+                            "e2etest" = "true"
+                            "test-run" = _now
+                            "repo": "https://github.com/hops-ops/psql-stack"
+                        }
+                        publicAccess = True
+                        nodeConfig = {
+                            enabled = True
+                        }
+                        oidc = {
+                            enabled = False
                         }
                     }
                 }
-                # VolumeSnapshotStack XR — installs the cluster-wide
-                # snapshot-controller via Helm. PSQLBranch's VolumeSnapshot
-                # objects only get reconciled to readyToUse=true when this
-                # controller is running.
+                # snapshot-controller on the new cluster — gates VolumeSnapshot
+                # readiness for PSQLBranch's fork. clusterName = _test_name
+                # routes Helm installs through the per-cluster ProviderConfig
+                # auto-created by AutoEKSCluster.
                 {
                     apiVersion = "hops.ops.com.ai/v1alpha1"
                     kind = "VolumeSnapshotStack"
                     metadata = {
                         name = "snapshot"
-                        namespace = "default"
+                        namespace = _namespace
                     }
                     spec = {
-                        clusterName = "default"
+                        clusterName = _test_name
+                        labels = {
+                            "hops.ops.com.ai/e2etest" = "true"
+                            "hops.ops.com.ai/test-run" = _now
+                        }
                     }
                 }
             ]
 
-            # ==============================================================
-            # manifests: all three XRs under test, applied together.
-            # Deleted during cleanup (unless --skip-delete).
-            # ==============================================================
+            # ==================================================================
+            # manifests: the three psql-stack XRs. Each targets the EKS cluster
+            # via clusterName=_test_name, which the compositions translate into
+            # providerConfigRef.name on the per-cluster ProviderConfigs created
+            # by AutoEKSCluster. Cleaned up cascade-deletes the CNPG primaries +
+            # branch + their PVCs/snapshots; the cluster itself stays up until
+            # the workflow's delete-extra-resources step tears it down.
+            # ==================================================================
             manifests = [
-                # 1. PSQLStack — Helm-installs CNPG operator + atlas-operator + VolumeSnapshotClass.
-                # Defaults: namespace=cnpg-system, ProviderConfigs default to clusterName.
                 hopsv1alpha1.PSQLStack {
                     metadata = {
                         name = _test_name
-                        namespace = "default"
+                        namespace = _namespace
                     }
                     spec = {
-                        clusterName = "default"
+                        clusterName = _test_name
                         labels = {
                             "hops.ops.com.ai/e2etest" = "true"
                             "hops.ops.com.ai/test-run" = _now
                         }
-                        helmProviderConfigRef = {
-                            name = "default"
-                            kind = "ProviderConfig"
-                        }
-                        kubernetesProviderConfigRef = {
-                            name = "default"
-                            kind = "ProviderConfig"
-                        }
                     }
                 }
-                # 2. PSQLCluster — per-app Postgres XR. CNPG (installed by
-                #    PSQLStack above) provisions a real Postgres cluster with
-                #    a real PVC backing the data.
                 hopsv1alpha1.PSQLCluster {
                     metadata = {
                         name = _cluster_name
-                        namespace = "default"
+                        namespace = _namespace
                     }
                     spec = {
-                        clusterName = "default"
+                        clusterName = _test_name
                         labels = {
                             "hops.ops.com.ai/e2etest" = "true"
                             "hops.ops.com.ai/test-run" = _now
                         }
-                        kubernetesProviderConfigRef = {
-                            name = "default"
-                            kind = "ProviderConfig"
-                        }
                         storage = {size = "1Gi"}
-                        # Omit `app` entirely — no ESO in kind, no pre-created
-                        # secret. CNPG auto-generates `<cluster>-app`.
+                        # No app block — CNPG auto-generates `<cluster>-app`.
                     }
                 }
-                # 3. PSQLBranch — ephemeral fork. Snapshots the source
-                #    PSQLCluster's PVC (snapshot-controller installed by the
-                #    VolumeSnapshotStack extraResource handles this), restores
-                #    into a new CNPG cluster bootstrapped from the snapshot.
                 hopsv1alpha1.PSQLBranch {
                     metadata = {
                         name = _branch_name
-                        namespace = "default"
+                        namespace = _namespace
                     }
                     spec = {
-                        clusterName = "default"
+                        clusterName = _test_name
                         labels = {
                             "hops.ops.com.ai/e2etest" = "true"
                             "hops.ops.com.ai/test-run" = _now
-                        }
-                        kubernetesProviderConfigRef = {
-                            name = "default"
-                            kind = "ProviderConfig"
                         }
                         source = {name = _cluster_name}
                     }

@@ -68,12 +68,36 @@
 {{- $atlas := $spec.atlasOperator | default dict }}
 
 # ==============================================================================
-# VolumeSnapshotClass — the stack's only storage-layer composition.
-# PSQLBranch targets this VSC by name when forking primaries. Default driver
-# is ebs.csi.eks.amazonaws.com (EKS Auto Mode's managed EBS CSI driver);
-# override for other CSI providers via $spec.snapshotClass.driver
-# (e.g. ebs.csi.aws.com for self-managed EBS, driver.longhorn.io).
+# StorageClass + VolumeSnapshotClass — paired storage-layer composition.
+#
+# PSQLCluster + PSQLBranch default their PVCs to the composed StorageClass;
+# PSQLBranch references the VolumeSnapshotClass when forking primaries. The
+# two CSI drivers MUST match (snapshotter only operates on PVCs whose
+# provisioner matches its driver), so they default to the same value
+# (ebs.csi.eks.amazonaws.com — EKS Auto Mode's managed EBS CSI driver).
+# Override both together for non-EKS targets (hostpath.csi.k8s.io for kind,
+# driver.longhorn.io for self-managed Longhorn, etc.).
 # ==============================================================================
+{{- $storageSpec := $spec.storageClass | default dict }}
+{{- $storageEnabled := true }}
+{{- if hasKey $storageSpec "enabled" }}
+  {{- $storageEnabled = $storageSpec.enabled }}
+{{- end }}
+{{- $storageAllowExpansion := true }}
+{{- if hasKey $storageSpec "allowVolumeExpansion" }}
+  {{- $storageAllowExpansion = $storageSpec.allowVolumeExpansion }}
+{{- end }}
+{{- $defaultStorageParams := dict "type" "gp3" }}
+{{- $storageClass := dict
+  "enabled" $storageEnabled
+  "name" ($storageSpec.name | default "psql")
+  "provisioner" ($storageSpec.provisioner | default "ebs.csi.eks.amazonaws.com")
+  "reclaimPolicy" ($storageSpec.reclaimPolicy | default "Delete")
+  "volumeBindingMode" ($storageSpec.volumeBindingMode | default "WaitForFirstConsumer")
+  "allowVolumeExpansion" $storageAllowExpansion
+  "parameters" ($storageSpec.parameters | default $defaultStorageParams)
+}}
+
 {{- $snapshotSpec := $spec.snapshotClass | default dict }}
 {{- $snapshotEnabled := true }}
 {{- if hasKey $snapshotSpec "enabled" }}
@@ -117,6 +141,7 @@
     "values" ($atlas.values | default dict)
     "overrideAllValues" ($atlas.overrideAllValues | default dict)
   )
+  "storageClass" $storageClass
   "snapshotClass" $snapshotClass
   "observed" (dict)
   "status" (dict)

@@ -1,0 +1,49 @@
+# code: language=yaml
+#
+# StorageClass — paired with the VolumeSnapshotClass composed in 170-.
+#
+# PSQLCluster's PVC and PSQLBranch's restored PVC both default to this class
+# (XRD default: "psql"). Snapshots only work when the snapshotter driver
+# matches the StorageClass provisioner, so the two are composed together
+# with the same CSI driver value.
+#
+# Default provisioner: ebs.csi.eks.amazonaws.com (EKS Auto Mode's managed EBS
+# CSI driver), parameters {type: gp3}, volumeBindingMode WaitForFirstConsumer
+# (correct for zonal CSI drivers — late-binds the PVC to a node so EBS volumes
+# land in the same AZ as the consuming pod). Override
+# $spec.storageClass.{provisioner,parameters} for non-EBS providers.
+#
+
+{{- $sc := $state.storageClass }}
+{{- if $sc.enabled }}
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-storageclass
+  annotations:
+    {{ setResourceNameAnnotation "storageclass" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    manifest:
+      apiVersion: storage.k8s.io/v1
+      kind: StorageClass
+      metadata:
+        name: {{ $sc.name }}
+        labels: {{ $state.labels | toJson }}
+      provisioner: {{ $sc.provisioner | quote }}
+      reclaimPolicy: {{ $sc.reclaimPolicy }}
+      volumeBindingMode: {{ $sc.volumeBindingMode }}
+      allowVolumeExpansion: {{ $sc.allowVolumeExpansion }}
+      {{- if $sc.parameters }}
+      parameters:
+        {{- range $k, $v := $sc.parameters }}
+        {{ $k }}: {{ $v | quote }}
+        {{- end }}
+      {{- end }}
+  providerConfigRef:
+    name: {{ $state.kubernetesProviderConfigRef.name }}
+    kind: {{ $state.kubernetesProviderConfigRef.kind }}
+{{- end }}

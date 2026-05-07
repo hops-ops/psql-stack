@@ -45,13 +45,45 @@ jobs:
   e2e:
     uses: unbounded-tech/workflows-crossplane/.github/workflows/e2e.yaml@feat/multi-api-support
     with:
-      # Long chain: snapshot-controller install → PSQLStack Helm installs
-      # (CNPG + atlas + VolumeSnapshotClass) → PSQLCluster bootstraps a real
-      # Postgres → PSQLBranch snapshots + restores. With cold image pulls and
-      # the occasional rate-limit slowness on the kind node, 90 min is what
-      # this chain needs to converge reliably.
+      # E2E provisions a real EKS Auto Mode cluster (mirror of aws-observe-stack)
+      # so the `psql` StorageClass + VolumeSnapshotClass land on a real
+      # ebs.csi.eks.amazonaws.com driver — same code path that runs on
+      # pat-local. Kind has no snapshot-capable CSI, so the prior kind-only
+      # e2e couldn't exercise PSQLBranch's snapshot/fork chain.
+      aws: true
+      aws-use-oidc: true
+      aws-account-id: "034489662075"
+      aws-region: us-east-2
+      aws-role-duration-seconds: 7200
+      write-env-files: true
+      env-vars: |
+        {
+          "ADMIN_ROLE_ARN": "${{ vars.ADMIN_ROLE_ARN }}",
+          "PRIVATE_SUBNET_ID_A": "${{ vars.PRIVATE_SUBNET_ID_A }}",
+          "PRIVATE_SUBNET_ID_B": "${{ vars.PRIVATE_SUBNET_ID_B }}"
+        }
+      debug-resource-types: |
+        [
+          "psqlstacks.hops.ops.com.ai",
+          "psqlclusters.hops.ops.com.ai",
+          "psqlbranches.hops.ops.com.ai",
+          "volumesnapshotstacks.hops.ops.com.ai",
+          "autoeksclusters.aws.hops.ops.com.ai"
+        ]
+      # AutoEKSCluster outlives the manifests' cascade delete; the workflow
+      # tears it down separately. VolumeSnapshotStack is colocated with the
+      # cluster — drop it together so the Helm release on the EKS cluster
+      # is uninstalled before the cluster goes.
+      delete-extra-resources: |
+        [
+          "volumesnapshotstacks.hops.ops.com.ai",
+          "autoeksclusters.aws.hops.ops.com.ai"
+        ]
+      # 90 min: ~10–15 min EKS Auto Mode cold start, then platform install +
+      # CNPG bootstrap + snapshot fork.
       timeout-minutes: 90
       cleanup-timeout-minutes: 30
+      delete-extra-resources-timeout-minutes: 30
 
   publish:
     needs:

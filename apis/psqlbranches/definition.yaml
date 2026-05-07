@@ -102,7 +102,7 @@ spec:
                     type: integer
                     default: 1
                   storage:
-                    description: Branch PVC sizing. Empty fields inherit from the source's storage on recovery.
+                    description: Branch PVC sizing. `size` must be ≥ the source PVC size for snapshot recovery to succeed.
                     type: object
                     properties:
                       size:
@@ -110,9 +110,9 @@ spec:
                         type: string
                         default: ""
                       class:
-                        description: Branch StorageClass. Empty = inherit from source.
+                        description: Branch StorageClass. Defaults to "psql" — the StorageClass composed by PSQLStack. Override only when forking onto a different driver than the source.
                         type: string
-                        default: ""
+                        default: psql
 
               postgresql:
                 description: Postgres version on the branch (must match source for snapshot recovery to succeed).

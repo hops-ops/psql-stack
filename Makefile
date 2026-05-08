@@ -112,9 +112,9 @@ render\:%:
 
 validate\:%:
 	@example="examples/psqlstacks/$*.yaml"; \
-	up composition render --xrd=$$definition $$composition $$example \
+	up composition render --xrd=$(DEFINITION) $(COMPOSITION) $$example \
 		--include-full-xr --quiet | \
-		crossplane beta validate $$api_dir --error-on-missing-schemas -
+		crossplane beta validate $(XRD_DIR) --error-on-missing-schemas -
 
 test:
 	up test run $(RENDER_TESTS)

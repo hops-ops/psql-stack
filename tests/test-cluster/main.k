@@ -294,7 +294,40 @@ _items = [
                                 name = "hops-aws-secrets-manager"
                                 kind = "ClusterSecretStore"
                             }
-                            target.name = "es-app-app"
+                            # Both username + password must be mapped from the
+                            # JSON blob at secretRef.path. CNPG reads this
+                            # Secret as kubernetes.io/basic-auth — a single
+                            # remoteRef without `property` would leave one of
+                            # the two keys empty and CNPG would fail to
+                            # bootstrap the role. Lock in the full shape so
+                            # future drift is caught.
+                            data = [
+                                {
+                                    secretKey = "username"
+                                    remoteRef = {
+                                        key = "my-cluster/es-app"
+                                        property = "username"
+                                    }
+                                }
+                                {
+                                    secretKey = "password"
+                                    remoteRef = {
+                                        key = "my-cluster/es-app"
+                                        property = "password"
+                                    }
+                                }
+                            ]
+                            target = {
+                                name = "es-app-app"
+                                creationPolicy = "Owner"
+                                template = {
+                                    type = "kubernetes.io/basic-auth"
+                                    data = {
+                                        username = "{{ .username }}"
+                                        password = "{{ .password }}"
+                                    }
+                                }
+                            }
                         }
                     }
                 }

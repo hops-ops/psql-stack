@@ -68,15 +68,17 @@ jobs:
           "psqlclusters.hops.ops.com.ai",
           "psqlbranches.hops.ops.com.ai",
           "volumesnapshotstacks.hops.ops.com.ai",
+          "certstacks.hops.ops.com.ai",
           "autoeksclusters.aws.hops.ops.com.ai"
         ]
       # AutoEKSCluster outlives the manifests' cascade delete; the workflow
-      # tears it down separately. VolumeSnapshotStack is colocated with the
-      # cluster — drop it together so the Helm release on the EKS cluster
-      # is uninstalled before the cluster goes.
+      # tears it down separately. VolumeSnapshotStack + CertStack are
+      # colocated with the cluster — drop them together so their Helm
+      # releases on the EKS cluster are uninstalled before the cluster goes.
       delete-extra-resources: |
         [
           "volumesnapshotstacks.hops.ops.com.ai",
+          "certstacks.hops.ops.com.ai",
           "autoeksclusters.aws.hops.ops.com.ai"
         ]
       # 90 min: ~10–15 min EKS Auto Mode cold start, then platform install +

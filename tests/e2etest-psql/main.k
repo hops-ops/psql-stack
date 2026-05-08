@@ -88,6 +88,16 @@ _items = [
                     metadata.name = "hops-ops-volume-snapshot-stack"
                     spec.package = "ghcr.io/hops-ops/volume-snapshot-stack:v0.1.0"
                 }
+                # cert-stack — installs cert-manager onto the target cluster.
+                # PSQLStack's scaleToZeroPlugin uses cert-manager Issuer +
+                # Certificate for the plugin's gRPC mTLS pair, so without this
+                # the stack stays NotReady on `s2z-cert-{client,server,issuer}`.
+                {
+                    apiVersion = "pkg.crossplane.io/v1"
+                    kind = "Configuration"
+                    metadata.name = "hops-ops-cert-stack"
+                    spec.package = "ghcr.io/hops-ops/cert-stack:v0.1.0"
+                }
             ]
 
             # ==================================================================
@@ -252,6 +262,24 @@ _items = [
                     kind = "VolumeSnapshotStack"
                     metadata = {
                         name = "snapshot"
+                        namespace = _namespace
+                    }
+                    spec = {
+                        clusterName = _test_name
+                        labels = {
+                            "hops.ops.com.ai/e2etest" = "true"
+                            "hops.ops.com.ai/test-run" = _now
+                        }
+                    }
+                }
+                # cert-manager on the new cluster — gates the s2z plugin's TLS
+                # pair (Issuer + client/server Certificates). Without this,
+                # PSQLStack stays NotReady on s2z-cert-* objects.
+                {
+                    apiVersion = "hops.ops.com.ai/v1alpha1"
+                    kind = "CertStack"
+                    metadata = {
+                        name = "cert"
                         namespace = _namespace
                     }
                     spec = {

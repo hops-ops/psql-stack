@@ -81,10 +81,19 @@ spec:
         {{- if $state.postgresql.version }}
           {{- $_ := set $clusterSpec "imageName" (printf "ghcr.io/cloudnative-pg/postgresql:%s" $state.postgresql.version) }}
         {{- end }}
-        {{- /* Storage — size always set (state-init defaults to 10Gi; consumer
-               must override for larger sources). class only set when explicitly
-               provided. */}}
-        {{- $storage := dict "size" $state.branch.storage.size }}
+        {{- /* Storage — size precedence: branch.storage.size > source.storage.size.
+               Both empty = omit storage.size on the Cluster CR; CNPG's webhook
+               rejects with a clear error rather than silently sizing wrong.
+               Hardcoding 10Gi here was a footgun for sources >10Gi (CNPG/EBS
+               can't shrink during recovery). class only set when provided. */}}
+        {{- $size := $state.branch.storage.size }}
+        {{- if not $size }}
+          {{- $size = $state.source.storage.size }}
+        {{- end }}
+        {{- $storage := dict }}
+        {{- if $size }}
+          {{- $_ := set $storage "size" $size }}
+        {{- end }}
         {{- if $state.branch.storage.class }}
           {{- $_ := set $storage "storageClass" $state.branch.storage.class }}
         {{- end }}

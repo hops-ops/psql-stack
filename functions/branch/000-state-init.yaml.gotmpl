@@ -42,11 +42,15 @@
 {{- if not $sourcePvcName }}
   {{- $sourcePvcName = printf "%s-1" $sourceName }}
 {{- end }}
+{{- $sourceStorageSpec := $sourceSpec.storage | default dict }}
 {{- $source := dict
   "name" $sourceName
   "namespace" $sourceNamespace
   "pvcName" $sourcePvcName
   "snapshotClassName" ($sourceSpec.snapshotClassName | default "psql")
+  "storage" (dict
+    "size" ($sourceStorageSpec.size | default "")
+  )
 }}
 
 # Cross-namespace bridging gate — render the source-ns VolumeSnapshot only when
@@ -58,17 +62,13 @@
 # ==============================================================================
 {{- $branchSpec := $spec.branch | default dict }}
 {{- $branchStorageSpec := $branchSpec.storage | default dict }}
-# CNPG requires spec.storage.size on the Cluster CR — default to "10Gi" when
-# unspecified. Users with larger sources (>10Gi) MUST set this explicitly to
-# at least the source PVC size; CNPG/EBS can't shrink during recovery.
-{{- $branchSize := $branchStorageSpec.size | default "" }}
-{{- if not $branchSize }}
-  {{- $branchSize = "10Gi" }}
-{{- end }}
+# Branch size — empty here is intentional. The cnpg-cluster template falls
+# back to source.storage.size when the branch size is unset; the previous
+# `default "10Gi"` was a footgun (sources >10Gi silently mis-sized).
 {{- $branch := dict
   "instances" ($branchSpec.instances | default 1)
   "storage" (dict
-    "size" $branchSize
+    "size" ($branchStorageSpec.size | default "")
     "class" ($branchStorageSpec.class | default "psql")
   )
 }}

@@ -11,3 +11,7 @@ spec:
   clusterName: my-cluster
   source:
     name: my-app                 # source PSQLCluster in same namespace
+    storage:
+      size: 10Gi                 # mirror source's spec.storage.size — branch
+                                 # PVC must be ≥ source PVC for CNPG recovery
+

@@ -201,6 +201,69 @@ _items = [
     }
 
     # ==========================================================================
+    # Storage size precedence: branch.storage.size wins over source.storage.size.
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "branch-storage-size-overrides-source-size"
+        spec = {
+            compositionPath = "apis/psqlbranches/composition.yaml"
+            xrdPath = "apis/psqlbranches/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLBranch {
+                metadata = {name = "br-explicit", namespace = "default"}
+                spec = {
+                    clusterName = "my-cluster"
+                    source = {
+                        name = "src-app"
+                        storage = {size = "100Gi"}
+                    }
+                    branch.storage.size = "150Gi"
+                }
+            }
+            assertResources = [
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "br-explicit-cnpg-cluster"
+                    spec.forProvider.manifest.spec.storage.size = "150Gi"
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
+    # Storage size precedence: source.storage.size used when branch size empty.
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "branch-storage-size-falls-back-to-source-size"
+        spec = {
+            compositionPath = "apis/psqlbranches/composition.yaml"
+            xrdPath = "apis/psqlbranches/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLBranch {
+                metadata = {name = "br-inherit", namespace = "default"}
+                spec = {
+                    clusterName = "my-cluster"
+                    source = {
+                        name = "src-app"
+                        storage = {size = "100Gi"}
+                    }
+                }
+            }
+            assertResources = [
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "br-inherit-cnpg-cluster"
+                    spec.forProvider.manifest.spec.storage.size = "100Gi"
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
     # Test 1b: explicit spec.postgresql.version sets imageName. Branches MUST
     # match the source's major version (snapshot recovery is binary-compatible
     # only within a major) — pinning the minor here is the typical use case.

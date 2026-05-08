@@ -340,7 +340,17 @@ _items = [
                             "hops.ops.com.ai/e2etest" = "true"
                             "hops.ops.com.ai/test-run" = _now
                         }
-                        source = {name = _cluster_name}
+                        # source.storage.size mirrors the PSQLCluster's
+                        # `spec.storage.size = "1Gi"` above. The branch
+                        # composition has no automatic visibility into the
+                        # source cluster's PVC capacity, so this explicit
+                        # mirror lets the rendered Cluster CR set the
+                        # required storage.size without forcing the consumer
+                        # to also set `branch.storage.size`.
+                        source = {
+                            name = _cluster_name
+                            storage = {size = "1Gi"}
+                        }
                     }
                 }
             ]

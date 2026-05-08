@@ -90,6 +90,21 @@ spec:
                     description: VolumeSnapshotClass to use for the snapshot. Defaults to "psql" (composed by psql-stack).
                     type: string
                     default: psql
+                  storage:
+                    description: |
+                      Source PVC sizing. The branch composition has no
+                      automatic visibility into the source PSQLCluster's
+                      storage shape, so when `branch.storage.size` is empty
+                      the composition falls back to the size declared here.
+                      Set this to the source's `spec.storage.size` so the
+                      branch PVC is at least as large as the source — CNPG
+                      can't restore a snapshot into a smaller PVC.
+                    type: object
+                    properties:
+                      size:
+                        description: Source PVC size, e.g. "100Gi". Used as the branch size when `branch.storage.size` is empty.
+                        type: string
+                        default: ""
                 required:
                 - name
 
@@ -102,11 +117,16 @@ spec:
                     type: integer
                     default: 1
                   storage:
-                    description: Branch PVC sizing. `size` must be ≥ the source PVC size for snapshot recovery to succeed.
+                    description: Branch PVC sizing. `size` must be ≥ the source PVC size for snapshot recovery to succeed (CNPG/EBS can't shrink during recovery).
                     type: object
                     properties:
                       size:
-                        description: Branch PVC size, e.g. "10Gi". Empty = match source.
+                        description: |
+                          Branch PVC size, e.g. "10Gi". Empty = fall back to
+                          `source.storage.size`. If both are empty the
+                          composition omits storage.size on the Cluster CR
+                          and CNPG's webhook will reject — set one or both
+                          to a value at least as large as the source PVC.
                         type: string
                         default: ""
                       class:

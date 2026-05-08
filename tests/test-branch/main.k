@@ -61,9 +61,12 @@ _items = [
                                 "hops.ops.com.ai/branch-of" = "src-app"
                             }
                         }
+                        # No imageName — when spec.postgresql.version is omitted,
+                        # CNPG falls back to its operator-default image. See
+                        # test "explicit-postgres-version-sets-imagename" for
+                        # the override path.
                         spec = {
                             instances = 1
-                            imageName = "ghcr.io/cloudnative-pg/postgresql:17"
                             bootstrap.recovery.volumeSnapshots.storage = {
                                 name = "br-same-snap"
                                 kind = "VolumeSnapshot"
@@ -71,6 +74,37 @@ _items = [
                             }
                         }
                     }
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
+    # Test 1b: explicit spec.postgresql.version sets imageName. Branches MUST
+    # match the source's major version (snapshot recovery is binary-compatible
+    # only within a major) — pinning the minor here is the typical use case.
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "explicit-postgres-version-sets-imagename"
+        spec = {
+            compositionPath = "apis/psqlbranches/composition.yaml"
+            xrdPath = "apis/psqlbranches/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLBranch {
+                metadata = {name = "br-pinned", namespace = "default"}
+                spec = {
+                    clusterName = "my-cluster"
+                    source = {name = "src-app"}
+                    postgresql.version = "17.4"
+                }
+            }
+            assertResources = [
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "br-pinned-cnpg-cluster"
+                    spec.forProvider.manifest.spec.imageName = "ghcr.io/cloudnative-pg/postgresql:17.4"
                 }
             ]
         }

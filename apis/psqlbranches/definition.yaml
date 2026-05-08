@@ -115,12 +115,20 @@ spec:
                         default: psql
 
               postgresql:
-                description: Postgres version on the branch (must match source for snapshot recovery to succeed).
+                description: |
+                  Postgres version on the branch. **Must match the source's
+                  major version** for snapshot recovery to succeed — Postgres
+                  doesn't downgrade or skip-upgrade across data dirs.
+                  Intentionally has no default: omit to let CNPG use its
+                  operator-default image (close-enough when source tracks
+                  the same chart), or set explicitly to mirror the source's
+                  version. A `default: "17"` here was a footgun — branches
+                  off PG 15/16 sources would silently mismatch.
                 type: object
                 properties:
                   version:
+                    description: Postgres major version (e.g. "17"). Empty = let CNPG pick its default; mirror the source's spec.postgresql.version for safety.
                     type: string
-                    default: "17"
 
               scaleToZero:
                 description: |

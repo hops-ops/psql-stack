@@ -74,11 +74,13 @@
 }}
 
 # ==============================================================================
-# Postgres version (must match source for snapshot recovery to succeed)
+# Postgres version — must match source's major for snapshot recovery to
+# succeed. No default: omit `imageName` downstream so CNPG falls back to its
+# operator default (matches the chart's pinned PG when source tracks it).
 # ==============================================================================
 {{- $pgSpec := $spec.postgresql | default dict }}
 {{- $postgresql := dict
-  "version" ($pgSpec.version | default "17")
+  "version" ($pgSpec.version | default "")
 }}
 
 # ==============================================================================

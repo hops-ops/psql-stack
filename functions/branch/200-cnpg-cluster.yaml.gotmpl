@@ -62,7 +62,6 @@ spec:
       spec:
         {{- $clusterSpec := dict
           "instances" $state.branch.instances
-          "imageName" (printf "ghcr.io/cloudnative-pg/postgresql:%s" $state.postgresql.version)
           "bootstrap" (dict
             "recovery" (dict
               "volumeSnapshots" (dict
@@ -75,6 +74,13 @@ spec:
             )
           )
         }}
+        {{- /* imageName only set when version is explicit. Empty = let CNPG
+               use its operator-default image (close-enough when source tracks
+               the same chart). Hardcoding e.g. "17" was a footgun: branches
+               off PG 15/16 sources would silently mismatch and fail recovery. */}}
+        {{- if $state.postgresql.version }}
+          {{- $_ := set $clusterSpec "imageName" (printf "ghcr.io/cloudnative-pg/postgresql:%s" $state.postgresql.version) }}
+        {{- end }}
         {{- /* Storage — size always set (state-init defaults to 10Gi; consumer
                must override for larger sources). class only set when explicitly
                provided. */}}

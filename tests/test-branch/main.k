@@ -80,6 +80,127 @@ _items = [
     }
 
     # ==========================================================================
+    # Cross-namespace, first reconcile: source-snapshot has bound to its
+    # VolumeSnapshotContent, branch-snapshot's underlying VolumeSnapshot was
+    # rendered earlier with an empty volumeSnapshotContentName and hasn't
+    # bound yet. The state-status logic must read from source-snapshot
+    # (since branch-snapshot's bound content is still empty), so the
+    # branch-ns VolumeSnapshot now renders with the source's content name —
+    # closing the chicken-and-egg.
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "cross-ns-prefers-source-content-when-branch-empty"
+        spec = {
+            compositionPath = "apis/psqlbranches/composition.yaml"
+            xrdPath = "apis/psqlbranches/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLBranch {
+                metadata = {name = "br-x", namespace = "preview-pr-1"}
+                spec = {
+                    clusterName = "prod"
+                    source = {name = "src-app", namespace = "team-app"}
+                }
+            }
+            observedResources = [
+                # source-ns VolumeSnapshot (Object wrapper) — bound.
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata = {
+                        name = "br-x-source-snapshot"
+                        annotations = {
+                            "crossplane.io/composition-resource-name" = "source-snapshot"
+                            "gotemplating.fn.crossplane.io/composition-resource-name" = "source-snapshot"
+                        }
+                    }
+                    status.atProvider.manifest.status.boundVolumeSnapshotContentName = "snapcontent-from-source"
+                }
+                # branch-ns VolumeSnapshot (Object wrapper) — created with
+                # empty content reference on the prior reconcile, not bound.
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata = {
+                        name = "br-x-branch-snapshot"
+                        annotations = {
+                            "crossplane.io/composition-resource-name" = "branch-snapshot"
+                            "gotemplating.fn.crossplane.io/composition-resource-name" = "branch-snapshot"
+                        }
+                    }
+                    status.atProvider.manifest.status.boundVolumeSnapshotContentName = ""
+                }
+            ]
+            assertResources = [
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "br-x-branch-snapshot"
+                    spec.forProvider.manifest.spec.source.volumeSnapshotContentName = "snapcontent-from-source"
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
+    # Cross-namespace, steady state: branch-snapshot has bound (its
+    # boundVolumeSnapshotContentName is populated). Reading branch's value
+    # is fine here — it will match source's. This locks in that the
+    # fallback doesn't override a populated branch content with the
+    # source's value.
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "cross-ns-uses-branch-content-when-bound"
+        spec = {
+            compositionPath = "apis/psqlbranches/composition.yaml"
+            xrdPath = "apis/psqlbranches/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLBranch {
+                metadata = {name = "br-y", namespace = "preview-pr-2"}
+                spec = {
+                    clusterName = "prod"
+                    source = {name = "src-app", namespace = "team-app"}
+                }
+            }
+            observedResources = [
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata = {
+                        name = "br-y-source-snapshot"
+                        annotations = {
+                            "crossplane.io/composition-resource-name" = "source-snapshot"
+                            "gotemplating.fn.crossplane.io/composition-resource-name" = "source-snapshot"
+                        }
+                    }
+                    status.atProvider.manifest.status.boundVolumeSnapshotContentName = "snapcontent-from-source"
+                }
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata = {
+                        name = "br-y-branch-snapshot"
+                        annotations = {
+                            "crossplane.io/composition-resource-name" = "branch-snapshot"
+                            "gotemplating.fn.crossplane.io/composition-resource-name" = "branch-snapshot"
+                        }
+                    }
+                    status.atProvider.manifest.status.boundVolumeSnapshotContentName = "snapcontent-from-branch"
+                }
+            ]
+            assertResources = [
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "br-y-branch-snapshot"
+                    spec.forProvider.manifest.spec.source.volumeSnapshotContentName = "snapcontent-from-branch"
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
     # Test 1b: explicit spec.postgresql.version sets imageName. Branches MUST
     # match the source's major version (snapshot recovery is binary-compatible
     # only within a major) — pinning the minor here is the typical use case.

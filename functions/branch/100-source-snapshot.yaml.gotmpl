@@ -12,9 +12,19 @@
 # For same-namespace branching, this template is skipped — the branch-ns
 # snapshot references the source PVC directly.
 #
+# Naming: the underlying VolumeSnapshot lives in the SOURCE namespace, but
+# its identity belongs to the BRANCH XR. Two PSQLBranch XRs with the same
+# `metadata.name` in different branch namespaces (e.g. `preview-pr-1` in
+# `team-a-preview` and `team-b-preview`) would otherwise collide on a single
+# `<branchName>-src` in the shared source ns. Prefix with the branch's own
+# namespace to make the name (sourceNS, branchNS, branchName)-unique.
+# K8s names are bound by RFC 1123 subdomain (253 chars) — concatenation is
+# safe at any reasonable namespace/branch length.
+#
 
 {{- $source := $state.source }}
 {{- if $state.crossNamespace }}
+{{- $sourceSnapName := printf "%s-%s-src" $state.namespace $state.name }}
 ---
 apiVersion: kubernetes.m.crossplane.io/v1alpha1
 kind: Object
@@ -30,7 +40,7 @@ spec:
       apiVersion: snapshot.storage.k8s.io/v1
       kind: VolumeSnapshot
       metadata:
-        name: {{ $state.name }}-src
+        name: {{ $sourceSnapName }}
         namespace: {{ $source.namespace }}
         labels: {{ $state.labels | toJson }}
       spec:

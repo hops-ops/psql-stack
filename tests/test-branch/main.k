@@ -257,8 +257,11 @@ _items = [
                     spec.forProvider.manifest = {
                         apiVersion = "snapshot.storage.k8s.io/v1"
                         kind = "VolumeSnapshot"
+                        # Name prefixed with branch namespace so two branches
+                        # with the same XR name in different namespaces don't
+                        # collide on a single `-src` in the shared source ns.
                         metadata = {
-                            name = "br-x-src"
+                            name = "preview-pr-1-br-x-src"
                             namespace = "team-app"
                         }
                         spec.source.persistentVolumeClaimName = "src-app-1"
@@ -280,6 +283,41 @@ _items = [
                     spec.forProvider.manifest.metadata = {
                         name = "br-x"
                         namespace = "preview-pr-1"
+                    }
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
+    # Test 2b: same branch XR name (`br-x`) in a DIFFERENT branch namespace
+    # (`other-team-preview` vs `preview-pr-1` above) produces a different
+    # source-snapshot name in the shared source ns. Locks in the
+    # collision-avoidance contract: source-ns name encodes the branch's own
+    # namespace.
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "cross-ns-source-snapshot-name-distinguishes-branch-ns"
+        spec = {
+            compositionPath = "apis/psqlbranches/composition.yaml"
+            xrdPath = "apis/psqlbranches/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLBranch {
+                metadata = {name = "br-x", namespace = "other-team-preview"}
+                spec = {
+                    clusterName = "prod"
+                    source = {name = "src-app", namespace = "team-app"}
+                }
+            }
+            assertResources = [
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "br-x-source-snapshot"
+                    spec.forProvider.manifest.metadata = {
+                        name = "other-team-preview-br-x-src"
+                        namespace = "team-app"
                     }
                 }
             ]

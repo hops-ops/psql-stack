@@ -188,24 +188,30 @@ spec:
                     type: object
                     properties:
                       secretStore:
+                        description: Reference to the SecretStore or ClusterSecretStore providing the value.
                         type: object
                         properties:
                           kind:
+                            description: Store kind. Use ClusterSecretStore for cluster-scoped stores (the platform default), SecretStore for namespaced stores in this XR's namespace.
                             type: string
                             enum:
                             - ClusterSecretStore
                             - SecretStore
                             default: ClusterSecretStore
                           name:
+                            description: Name of the SecretStore or ClusterSecretStore.
                             type: string
                           namespace:
+                            description: Namespace of the SecretStore (ignored for ClusterSecretStore). Defaults to the PSQLCluster's namespace.
                             type: string
                         required:
                         - name
                       secretRef:
+                        description: Where in the secrets backend the credentials live. The remote value must be a JSON blob with `username` and `password` properties — both are extracted into the resulting K8s Secret.
                         type: object
                         properties:
                           path:
+                            description: Path/key in the secrets backend (e.g. AWS Secrets Manager `my-cluster/superuser`).
                             type: string
                         required:
                         - path

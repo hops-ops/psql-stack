@@ -405,6 +405,38 @@ _items = [
             ]
         }
     }
+
+    # ==========================================================================
+    # monitoring.enabled=false propagates to the Cluster CR. Default is true
+    # (covered by Test 1's monitoring.enablePodMonitor = True assertion); this
+    # locks in that explicit `false` is honored — the hasKey guard in
+    # state-init distinguishes "explicitly off" from "absent".
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "monitoring-disabled-when-explicit-false"
+        spec = {
+            compositionPath = "apis/psqlclusters/composition.yaml"
+            xrdPath = "apis/psqlclusters/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLCluster {
+                metadata = {name = "no-mon", namespace = "default"}
+                spec = {
+                    clusterName = "my-cluster"
+                    storage = {size = "10Gi"}
+                    monitoring.enabled = False
+                }
+            }
+            assertResources = [
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "no-mon-cnpg-cluster"
+                    spec.forProvider.manifest.spec.monitoring.enablePodMonitor = False
+                }
+            ]
+        }
+    }
 ]
 
 items = _items

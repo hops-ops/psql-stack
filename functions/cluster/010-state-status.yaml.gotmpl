@@ -1,0 +1,59 @@
+# code: language=yaml
+#
+# Extract observed state from composed resources
+#
+
+{{- $observed := $.observed.resources | default dict }}
+
+# ==============================================================================
+# Cluster status — read CNPG Cluster's `.status.phase` from the wrapped Object's
+# `.status.atProvider.manifest.status.phase`. The Object's Ready=true means the
+# manifest applied; the wrapped Cluster's phase tells us if Postgres is healthy.
+# ==============================================================================
+{{- $clusterEntry := get $observed "cnpg-cluster" | default dict }}
+{{- $clusterResource := $clusterEntry.resource | default dict }}
+{{- $clusterAtProvider := (($clusterResource.status | default dict).atProvider | default dict) }}
+{{- $clusterManifest := $clusterAtProvider.manifest | default dict }}
+{{- $clusterStatus := $clusterManifest.status | default dict }}
+{{- $clusterPhase := $clusterStatus.phase | default "" }}
+{{- $clusterReady := false }}
+{{- if eq $clusterPhase "Cluster in healthy state" }}
+  {{- $clusterReady = true }}
+{{- end }}
+
+# ==============================================================================
+# ExternalSecret status — the composition emits two distinct Object resources
+# (`external-secret-app` and `external-secret-superuser`) whenever the
+# corresponding `*.externalSecret` block is set. Aggregate readiness across
+# both: ready=true when every present ES Object reports Ready=true, and
+# ready=true when neither exists (nothing to wait on, BYO/auto-gen path).
+# Object Ready=true means the ExternalSecret CR was applied; SecretSynced
+# follows fast enough that we don't inspect the wrapped ES status further.
+# ==============================================================================
+{{- $esResourceNames := list "external-secret-app" "external-secret-superuser" }}
+{{- $esPresent := 0 }}
+{{- $esReadyCount := 0 }}
+{{- range $name := $esResourceNames }}
+  {{- $entry := get $observed $name | default dict }}
+  {{- if $entry }}
+    {{- $esPresent = add $esPresent 1 }}
+    {{- $resource := $entry.resource | default dict }}
+    {{- $conditions := (($resource.status | default dict).conditions | default list) }}
+    {{- range $conditions }}
+      {{- if and (eq .type "Ready") (eq .status "True") }}
+        {{- $esReadyCount = add $esReadyCount 1 }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- $esReady := eq $esPresent $esReadyCount }}
+
+{{- $state = set $state "observed" (dict
+  "cluster" (dict "ready" $clusterReady "phase" $clusterPhase)
+  "externalSecret" (dict "ready" $esReady)
+) }}
+
+{{- $state = set $state "status" (dict
+  "ready" false
+  "clusterPhase" $clusterPhase
+) }}

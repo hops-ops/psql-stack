@@ -1,6 +1,6 @@
 # code: language=yaml
 #
-# Extract observed state from all composed resources and compute status
+# Extract observed state from composed resources and compute status
 #
 
 {{- $observed := $.observed.resources | default dict }}
@@ -10,7 +10,7 @@
 # ==============================================================================
 
 {{- $checkReady := dict }}
-{{- range $key := list "stackgres-operator" "atlas-operator" }}
+{{- range $key := list "cnpg-operator" "cnpg-scale-to-zero" "atlas-operator" "storageclass" "volumesnapshotclass" }}
   {{- $entry := get $observed $key | default dict }}
   {{- $resource := $entry.resource | default dict }}
   {{- $status := $resource.status | default dict }}
@@ -27,8 +27,11 @@
 # Set observed state
 # ==============================================================================
 {{- $state = set $state "observed" (dict
-  "stackgresOperator" (dict "ready" (get $checkReady "stackgres-operator"))
+  "cnpg" (dict "ready" (get $checkReady "cnpg-operator"))
+  "scaleToZeroPlugin" (dict "ready" (get $checkReady "cnpg-scale-to-zero"))
   "atlasOperator" (dict "ready" (get $checkReady "atlas-operator"))
+  "storageClass" (dict "ready" (get $checkReady "storageclass"))
+  "snapshotClass" (dict "ready" (get $checkReady "volumesnapshotclass"))
 ) }}
 
 # ==============================================================================

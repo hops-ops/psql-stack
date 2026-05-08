@@ -1,0 +1,385 @@
+# code: language=yaml
+#
+# cnpg-i-scale-to-zero plugin install
+#
+# Materializes the upstream release manifest as a set of Crossplane Objects.
+# Source: https://github.com/xataio/cnpg-i-scale-to-zero/releases/download/$VERSION/manifest.yaml
+# (renovate: datasource=github-releases depName=xataio/cnpg-i-scale-to-zero)
+#
+# Prereq: cert-manager must already be installed on the target cluster — the
+# plugin uses cert-manager Certificate + Issuer to provision the gRPC server
+# and client TLS material. In hops-ops, cert-manager is provided by
+# the dns-stack (deploy that first).
+#
+# When PSQLClusters opt into scale-to-zero (via annotations + plugins:[] entry),
+# the operator routes lifecycle hooks here over gRPC; the plugin injects a
+# sidecar (image $state.scaleToZeroPlugin.version) into each cluster pod that
+# monitors connection activity and toggles spec.instances=0 on idle.
+#
+
+{{- $s2z := $state.scaleToZeroPlugin }}
+{{- if $s2z.enabled }}
+
+{{- $ns := $s2z.namespace }}
+{{- $ver := $s2z.version }}
+{{- $pluginImage := printf "ghcr.io/xataio/cnpg-i-scale-to-zero:%s" $ver }}
+{{- $sidecarImage := printf "ghcr.io/xataio/cnpg-i-scale-to-zero-sidecar:%s" $ver }}
+
+# ServiceAccount
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-s2z-serviceaccount
+  annotations:
+    {{ setResourceNameAnnotation "s2z-serviceaccount" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    manifest:
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: cnpg-scale-to-zero-plugin
+        namespace: {{ $ns }}
+        labels: {{ $state.labels | toJson }}
+  providerConfigRef:
+    name: {{ $state.kubernetesProviderConfigRef.name }}
+    kind: {{ $state.kubernetesProviderConfigRef.kind }}
+
+# ClusterRole — sidecar's required permissions on CNPG Clusters / ScheduledBackups
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-s2z-clusterrole
+  annotations:
+    {{ setResourceNameAnnotation "s2z-clusterrole" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    manifest:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRole
+      metadata:
+        name: cnpg-scale-to-zero-sidecar-role
+        labels: {{ $state.labels | toJson }}
+      rules:
+      - apiGroups: ["postgresql.cnpg.io"]
+        resources: ["clusters", "scheduledbackups"]
+        verbs: ["get", "list", "watch", "update", "patch"]
+  providerConfigRef:
+    name: {{ $state.kubernetesProviderConfigRef.name }}
+    kind: {{ $state.kubernetesProviderConfigRef.kind }}
+
+# ClusterRoleBinding
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-s2z-clusterrolebinding
+  annotations:
+    {{ setResourceNameAnnotation "s2z-clusterrolebinding" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    manifest:
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: cnpg-scale-to-zero-plugin-binding
+        labels: {{ $state.labels | toJson }}
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: cnpg-scale-to-zero-sidecar-role
+      subjects:
+      - kind: ServiceAccount
+        name: cnpg-scale-to-zero-plugin
+        namespace: {{ $ns }}
+  providerConfigRef:
+    name: {{ $state.kubernetesProviderConfigRef.name }}
+    kind: {{ $state.kubernetesProviderConfigRef.kind }}
+
+# Config Secret — sidecar image reference (paired with plugin version)
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-s2z-config-secret
+  annotations:
+    {{ setResourceNameAnnotation "s2z-config-secret" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    manifest:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: scale-to-zero-config
+        namespace: {{ $ns }}
+        labels: {{ $state.labels | toJson }}
+      type: Opaque
+      stringData:
+        SIDECAR_IMAGE: {{ $sidecarImage | quote }}
+  providerConfigRef:
+    name: {{ $state.kubernetesProviderConfigRef.name }}
+    kind: {{ $state.kubernetesProviderConfigRef.kind }}
+
+# Self-signed Issuer (cert-manager) for gRPC TLS
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-s2z-issuer
+  annotations:
+    {{ setResourceNameAnnotation "s2z-issuer" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    manifest:
+      apiVersion: cert-manager.io/v1
+      kind: Issuer
+      metadata:
+        name: cnpg-scale-to-zero-selfsigned-issuer
+        namespace: {{ $ns }}
+        labels: {{ $state.labels | toJson }}
+      spec:
+        selfSigned: {}
+  providerConfigRef:
+    name: {{ $state.kubernetesProviderConfigRef.name }}
+    kind: {{ $state.kubernetesProviderConfigRef.kind }}
+
+# Server Certificate — gRPC server TLS (used by plugin Deployment)
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-s2z-cert-server
+  annotations:
+    {{ setResourceNameAnnotation "s2z-cert-server" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    manifest:
+      apiVersion: cert-manager.io/v1
+      kind: Certificate
+      metadata:
+        name: scaletozero-server
+        namespace: {{ $ns }}
+        labels: {{ $state.labels | toJson }}
+      spec:
+        commonName: scale-to-zero
+        dnsNames:
+        - scale-to-zero
+        - scale-to-zero.{{ $ns }}
+        - scale-to-zero.{{ $ns }}.svc
+        - scale-to-zero.{{ $ns }}.svc.cluster.local
+        duration: 2160h
+        renewBefore: 360h
+        isCA: false
+        issuerRef:
+          group: cert-manager.io
+          kind: Issuer
+          name: cnpg-scale-to-zero-selfsigned-issuer
+        secretName: scaletozero-server-tls
+        usages:
+        - server auth
+  providerConfigRef:
+    name: {{ $state.kubernetesProviderConfigRef.name }}
+    kind: {{ $state.kubernetesProviderConfigRef.kind }}
+
+# Client Certificate — gRPC client TLS (used by CNPG operator to call plugin)
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-s2z-cert-client
+  annotations:
+    {{ setResourceNameAnnotation "s2z-cert-client" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    manifest:
+      apiVersion: cert-manager.io/v1
+      kind: Certificate
+      metadata:
+        name: scaletozero-client
+        namespace: {{ $ns }}
+        labels: {{ $state.labels | toJson }}
+      spec:
+        commonName: scaletozero-client
+        duration: 2160h
+        renewBefore: 360h
+        isCA: false
+        issuerRef:
+          group: cert-manager.io
+          kind: Issuer
+          name: cnpg-scale-to-zero-selfsigned-issuer
+        secretName: scaletozero-client-tls
+        usages:
+        - client auth
+  providerConfigRef:
+    name: {{ $state.kubernetesProviderConfigRef.name }}
+    kind: {{ $state.kubernetesProviderConfigRef.kind }}
+
+# Service — exposes plugin gRPC endpoint to CNPG operator
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-s2z-service
+  annotations:
+    {{ setResourceNameAnnotation "s2z-service" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    manifest:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: scale-to-zero
+        namespace: {{ $ns }}
+        annotations:
+          cnpg.io/pluginClientSecret: scaletozero-client-tls
+          cnpg.io/pluginPort: "9090"
+          cnpg.io/pluginServerSecret: scaletozero-server-tls
+        labels:
+          {{- range $k, $v := $state.labels }}
+          {{ $k }}: {{ $v | quote }}
+          {{- end }}
+          app: scale-to-zero
+          cnpg.io/pluginName: cnpg-i-scale-to-zero.xata.io
+      spec:
+        ports:
+        - name: grpc
+          port: 9090
+          protocol: TCP
+          targetPort: 9090
+        selector:
+          app: scale-to-zero
+  providerConfigRef:
+    name: {{ $state.kubernetesProviderConfigRef.name }}
+    kind: {{ $state.kubernetesProviderConfigRef.kind }}
+
+# Deployment — the plugin's gRPC server
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-s2z-deployment
+  annotations:
+    {{ setResourceNameAnnotation "cnpg-scale-to-zero" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    manifest:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: scale-to-zero
+        namespace: {{ $ns }}
+        labels:
+          {{- range $k, $v := $state.labels }}
+          {{ $k }}: {{ $v | quote }}
+          {{- end }}
+          app: scale-to-zero
+      spec:
+        replicas: {{ if $state.ha.enabled }}{{ $state.ha.replicas }}{{ else }}1{{ end }}
+        selector:
+          matchLabels:
+            app: scale-to-zero
+        template:
+          metadata:
+            labels:
+              app: scale-to-zero
+          spec:
+            serviceAccountName: cnpg-scale-to-zero-plugin
+            {{- if and $state.ha.enabled $state.ha.topologySpreadByZone }}
+            topologySpreadConstraints:
+            - maxSkew: 1
+              topologyKey: topology.kubernetes.io/zone
+              whenUnsatisfiable: ScheduleAnyway
+              labelSelector:
+                matchLabels:
+                  app: scale-to-zero
+            {{- end }}
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 10001
+              runAsGroup: 10001
+              fsGroup: 10001
+            containers:
+            - name: cnpg-i-scale-to-zero
+              image: {{ $pluginImage | quote }}
+              args:
+              - plugin
+              - --server-cert=/server/tls.crt
+              - --server-key=/server/tls.key
+              - --client-cert=/client/tls.crt
+              - --server-address=:9090
+              env:
+              - name: LOG_LEVEL
+                value: info
+              - name: SIDECAR_CPU_REQUEST
+                value: 50m
+              - name: SIDECAR_CPU_LIMIT
+                value: 200m
+              - name: SIDECAR_MEMORY_REQUEST
+                value: 64Mi
+              - name: SIDECAR_MEMORY_LIMIT
+                value: 64Mi
+              envFrom:
+              - secretRef:
+                  name: scale-to-zero-config
+              ports:
+              - name: grpc
+                containerPort: 9090
+                protocol: TCP
+              livenessProbe:
+                tcpSocket:
+                  port: 9090
+                initialDelaySeconds: 10
+                periodSeconds: 30
+                timeoutSeconds: 5
+                failureThreshold: 3
+              readinessProbe:
+                tcpSocket:
+                  port: 9090
+                initialDelaySeconds: 5
+                periodSeconds: 10
+                timeoutSeconds: 5
+                failureThreshold: 3
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 128Mi
+              volumeMounts:
+              - name: server
+                mountPath: /server
+              - name: client
+                mountPath: /client
+            volumes:
+            - name: server
+              secret:
+                secretName: scaletozero-server-tls
+            - name: client
+              secret:
+                secretName: scaletozero-client-tls
+  providerConfigRef:
+    name: {{ $state.kubernetesProviderConfigRef.name }}
+    kind: {{ $state.kubernetesProviderConfigRef.kind }}
+
+{{- end }}

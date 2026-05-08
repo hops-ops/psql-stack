@@ -1,16 +1,16 @@
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
 metadata:
-  name: psqlstacks.hops.ops.com.ai
+  name: psqlbranches.hops.ops.com.ai
 spec:
   compositeTypeRef:
     apiVersion: hops.ops.com.ai/v1alpha1
-    kind: PSQLStack
+    kind: PSQLBranch
   mode: Pipeline
   pipeline:
   - functionRef:
-      name: hops-ops-psql-stackstack
-    step: stack
+      name: hops-ops-psql-stackbranch
+    step: branch
   - functionRef:
       name: crossplane-contrib-function-auto-ready
     step: crossplane-contrib-function-auto-ready

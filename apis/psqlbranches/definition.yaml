@@ -1,0 +1,219 @@
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: psqlbranches.hops.ops.com.ai
+spec:
+  group: hops.ops.com.ai
+  names:
+    kind: PSQLBranch
+    plural: psqlbranches
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    referenceable: true
+    served: true
+    schema:
+      openAPIV3Schema:
+        description: |
+          PSQLBranch is an ephemeral CoW fork of a PSQLCluster, designed for
+          preview environments (one branch per PR) and short-lived data
+          branches. Composes a CSI VolumeSnapshot of the source's PVC plus a
+          new CNPG Cluster bootstrapped via `bootstrap.recovery.volumeSnapshots`.
+
+          Cross-namespace forks are supported (preview-pr-N namespace forking a
+          source in team-app namespace) via a bridging VolumeSnapshotContent —
+          the render template composes a VolumeSnapshot in the source namespace
+          AND a static-bound VolumeSnapshot in the branch namespace, then the
+          new Cluster references the branch-ns VolumeSnapshot for recovery.
+
+          Same-namespace forks collapse this into a single VolumeSnapshot.
+
+          Required prerequisites on the target cluster: psql-stack (CNPG
+          operator), volume-snapshot-stack (snapshot-controller + CRDs), and
+          a source PSQLCluster with `branching.enabled: true`.
+        type: object
+        properties:
+          spec:
+            description: PSQLBranchSpec defines the desired state.
+            type: object
+            properties:
+              clusterName:
+                description: Name of the target cluster. Used as default for kubernetesProviderConfigRef.name and label values.
+                type: string
+              labels:
+                description: Custom labels merged with stack defaults; applied to every composed resource.
+                type: object
+                additionalProperties:
+                  type: string
+                x-kubernetes-preserve-unknown-fields: true
+              managementPolicies:
+                description: Crossplane managementPolicies. Defaults to ["*"].
+                type: array
+                items:
+                  type: string
+                default:
+                - "*"
+              kubernetesProviderConfigRef:
+                description: Reference to the Kubernetes ProviderConfig used to apply composed resources. Defaults to clusterName.
+                type: object
+                properties:
+                  name:
+                    type: string
+                  kind:
+                    type: string
+                    enum:
+                    - ProviderConfig
+                    - ClusterProviderConfig
+
+              source:
+                description: |
+                  Source PSQLCluster to fork. Cross-namespace supported — leave
+                  `namespace` empty for same-namespace branching, or set it to
+                  the team's namespace for preview-PR-style forks.
+                type: object
+                properties:
+                  name:
+                    description: Source PSQLCluster name (required).
+                    type: string
+                  namespace:
+                    description: Source PSQLCluster namespace. Empty = same as branch.
+                    type: string
+                    default: ""
+                  pvcName:
+                    description: |
+                      Source PVC name to snapshot. Empty = derive from CNPG
+                      naming convention (`<source.name>-1` for the primary
+                      instance).
+                    type: string
+                    default: ""
+                  snapshotClassName:
+                    description: VolumeSnapshotClass to use for the snapshot. Defaults to "psql" (composed by psql-stack).
+                    type: string
+                    default: psql
+                  storage:
+                    description: |
+                      Source PVC sizing. The branch composition has no
+                      automatic visibility into the source PSQLCluster's
+                      storage shape, so when `branch.storage.size` is empty
+                      the composition falls back to the size declared here.
+                      Set this to the source's `spec.storage.size` so the
+                      branch PVC is at least as large as the source — CNPG
+                      can't restore a snapshot into a smaller PVC.
+                    type: object
+                    properties:
+                      size:
+                        description: Source PVC size, e.g. "100Gi". Used as the branch size when `branch.storage.size` is empty.
+                        type: string
+                        default: ""
+                required:
+                - name
+
+              branch:
+                description: Branch cluster sizing.
+                type: object
+                properties:
+                  instances:
+                    description: Branch instance count. Defaults to 1 (HA on branches is unusual).
+                    type: integer
+                    default: 1
+                  storage:
+                    description: Branch PVC sizing. `size` must be ≥ the source PVC size for snapshot recovery to succeed (CNPG/EBS can't shrink during recovery).
+                    type: object
+                    properties:
+                      size:
+                        description: |
+                          Branch PVC size, e.g. "10Gi". Empty = fall back to
+                          `source.storage.size`. If both are empty the
+                          composition omits storage.size on the Cluster CR
+                          and CNPG's webhook will reject — set one or both
+                          to a value at least as large as the source PVC.
+                        type: string
+                        default: ""
+                      class:
+                        description: Branch StorageClass. Defaults to "psql" — the StorageClass composed by PSQLStack. Override only when forking onto a different driver than the source.
+                        type: string
+                        default: psql
+
+              postgresql:
+                description: |
+                  Postgres version on the branch. **Must match the source's
+                  major version** for snapshot recovery to succeed — Postgres
+                  doesn't downgrade or skip-upgrade across data dirs.
+                  Intentionally has no default: omit to let CNPG use its
+                  operator-default image (close-enough when source tracks
+                  the same chart), or set explicitly to mirror the source's
+                  version. A `default: "17"` here was a footgun — branches
+                  off PG 15/16 sources would silently mismatch.
+                type: object
+                properties:
+                  version:
+                    description: Postgres major version (e.g. "17"). Empty = let CNPG pick its default; mirror the source's spec.postgresql.version for safety.
+                    type: string
+
+              scaleToZero:
+                description: |
+                  Auto-hibernate the branch after `idleTimeout` of no client
+                  activity. Default-on with aggressive timeout — preview-PR
+                  branches should hibernate fast to keep cost flat.
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                    default: true
+                  idleTimeout:
+                    description: Idle duration before hibernate. Defaults to "10m" (more aggressive than PSQLCluster's 30m).
+                    type: string
+                    default: 10m
+
+              ttl:
+                description: |
+                  Recorded intent for branch expiration. v0 does NOT enforce
+                  the TTL automatically — pair with an external cleanup
+                  mechanism (Kyverno cleanupPolicies, ArgoCD ApplicationSet
+                  with pullRequest generator that deletes on PR close, etc.).
+                  Status reports `expiresAt` (creation + after) for tooling.
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                    default: false
+                  after:
+                    description: Duration after which the branch should be deleted. Defaults to "168h" (7 days).
+                    type: string
+                    default: 168h
+
+              cnpg:
+                description: Direct passthrough into the composed Cluster CR's spec. Use for novel CNPG features not covered by the toggles above.
+                type: object
+                properties:
+                  values:
+                    description: Merged into the Cluster.spec.
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  overrideAllValues:
+                    description: Replaces the entire Cluster.spec.
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+            required:
+            - clusterName
+            - source
+          status:
+            description: PSQLBranchStatus defines the observed state.
+            type: object
+            properties:
+              ready:
+                type: boolean
+              bootstrapPhase:
+                description: Current branch CNPG Cluster `.status.phase`.
+                type: string
+              bootstrapMethod:
+                description: Bootstrap method actually used. v0 always "volumeSnapshot".
+                type: string
+              sourceSnapshotContent:
+                description: Name of the cluster-scoped VolumeSnapshotContent backing this branch (for cross-ns bridging visibility).
+                type: string
+              expiresAt:
+                description: Computed deletion deadline when ttl.enabled is true.
+                type: string
+        required:
+        - spec

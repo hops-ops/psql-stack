@@ -1,0 +1,91 @@
+# code: language=yaml
+#
+# Helm Release: cloudnative-pg operator
+#
+# CloudNativePG is a CNCF PostgreSQL operator for Kubernetes covering the
+# full lifecycle of PostgreSQL clusters (HA, streaming replication,
+# VolumeSnapshot backups, Barman cloud, pg_basebackup clones, CNPG-I
+# plugin protocol for extensions like scale-to-zero).
+#
+# Chart: https://cloudnative-pg.github.io/charts (chart name: cloudnative-pg)
+# Upstream: https://github.com/cloudnative-pg/cloudnative-pg
+#
+
+{{- $cnpg := $state.cnpg }}
+
+---
+apiVersion: helm.m.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: {{ $cnpg.name }}
+  annotations:
+    {{ setResourceNameAnnotation "cnpg-operator" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    chart:
+      name: cloudnative-pg
+      repository: https://cloudnative-pg.github.io/charts
+      version: {{ $cnpg.chartVersion | quote }}
+    namespace: {{ $cnpg.namespace }}
+    {{- if $cnpg.overrideAllValues }}
+    values:
+      {{- toYaml $cnpg.overrideAllValues | nindent 6 }}
+    {{- else }}
+    {{- /* Chart defaults — Auto Mode handles scheduling, no nodeSelector/
+           tolerations injected. */}}
+    {{- $chartDefaults := dict }}
+    {{- if $state.ha.enabled }}
+      {{- $_ := set $chartDefaults "replicaCount" $state.ha.replicas }}
+      {{- if $state.ha.topologySpreadByZone }}
+        {{- $_ := set $chartDefaults "topologySpreadConstraints" (list (dict
+          "maxSkew" 1
+          "topologyKey" "topology.kubernetes.io/zone"
+          "whenUnsatisfiable" "ScheduleAnyway"
+          "labelSelector" (dict "matchLabels" (dict "app.kubernetes.io/name" "cloudnative-pg"))
+        )) }}
+      {{- end }}
+    {{- end }}
+    {{- $mergedValues := mergeOverwrite $chartDefaults ($cnpg.values | default dict) }}
+    values:
+      {{- toYaml $mergedValues | nindent 6 }}
+    {{- end }}
+  rollbackLimit: 3
+  providerConfigRef:
+    name: {{ $state.helmProviderConfigRef.name }}
+    kind: {{ $state.helmProviderConfigRef.kind }}
+
+# ==============================================================================
+# Usage: Protect cnpg-operator from deletion until atlas-operator is deleted.
+# Atlas manages schema migrations against CNPG-managed databases; deleting CNPG
+# first would orphan Atlas's migration state.
+#
+# Gate on observed *existence* (both Releases present in $.observed.resources),
+# NOT readiness. If Atlas is still progressing or in error and the user deletes
+# the stack at that moment, the Usage must already exist — otherwise CNPG could
+# be torn down first and orphan Atlas.
+# ==============================================================================
+{{- $observed := $.observed.resources | default dict }}
+{{- if and (hasKey $observed "cnpg-operator") (hasKey $observed "atlas-operator") }}
+---
+apiVersion: protection.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  name: {{ $state.name }}-delete-atlas-operator-before-cnpg
+  annotations:
+    {{ setResourceNameAnnotation "usage-cnpg-atlas" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  replayDeletion: true
+  of:
+    apiVersion: helm.m.crossplane.io/v1beta1
+    kind: Release
+    resourceRef:
+      name: {{ $cnpg.name }}
+  by:
+    apiVersion: helm.m.crossplane.io/v1beta1
+    kind: Release
+    resourceRef:
+      name: {{ $state.atlasOperator.name }}
+{{- end }}

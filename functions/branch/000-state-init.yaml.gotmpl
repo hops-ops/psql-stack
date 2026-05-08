@@ -1,0 +1,137 @@
+# code: language=yaml
+#
+# Initialize $state with spec defaults
+#
+
+{{- $xr := getCompositeResource . }}
+{{- $spec := $xr.spec | default dict }}
+{{- $metadata := $xr.metadata | default dict }}
+
+# ==============================================================================
+# Core defaults
+# ==============================================================================
+{{- $name := $metadata.name }}
+{{- $namespace := $metadata.namespace | default "default" }}
+{{- $clusterName := $spec.clusterName }}
+{{- $managementPolicies := $spec.managementPolicies | default (list "*") }}
+
+{{- $defaultLabels := dict
+  "hops.ops.com.ai/managed" "true"
+  "hops.ops.com.ai/psql-branch" $name
+}}
+{{- $labels := merge $defaultLabels ($spec.labels | default dict) }}
+
+{{- $k8sProviderConfigRef := $spec.kubernetesProviderConfigRef | default dict }}
+{{- $k8sProviderConfigRef = dict
+  "name" ($k8sProviderConfigRef.name | default $clusterName)
+  "kind" ($k8sProviderConfigRef.kind | default "ProviderConfig")
+}}
+
+# ==============================================================================
+# Source — the PSQLCluster being forked
+# Default pvcName: "<source.name>-1" (CNPG's primary instance naming).
+# Default snapshotClassName: "psql" (composed by psql-stack).
+# ==============================================================================
+{{- $sourceSpec := $spec.source }}
+{{- $sourceName := $sourceSpec.name }}
+{{- $sourceNamespace := $sourceSpec.namespace | default "" }}
+{{- if not $sourceNamespace }}
+  {{- $sourceNamespace = $namespace }}
+{{- end }}
+{{- $sourcePvcName := $sourceSpec.pvcName | default "" }}
+{{- if not $sourcePvcName }}
+  {{- $sourcePvcName = printf "%s-1" $sourceName }}
+{{- end }}
+{{- $sourceStorageSpec := $sourceSpec.storage | default dict }}
+{{- $source := dict
+  "name" $sourceName
+  "namespace" $sourceNamespace
+  "pvcName" $sourcePvcName
+  "snapshotClassName" ($sourceSpec.snapshotClassName | default "psql")
+  "storage" (dict
+    "size" ($sourceStorageSpec.size | default "")
+  )
+}}
+
+# Cross-namespace bridging gate — render the source-ns VolumeSnapshot only when
+# the source is in a different namespace from the branch.
+{{- $crossNamespace := ne $sourceNamespace $namespace }}
+
+# ==============================================================================
+# Branch sizing
+# ==============================================================================
+{{- $branchSpec := $spec.branch | default dict }}
+{{- $branchStorageSpec := $branchSpec.storage | default dict }}
+# Branch size — empty here is intentional. The cnpg-cluster template falls
+# back to source.storage.size when the branch size is unset; the previous
+# `default "10Gi"` was a footgun (sources >10Gi silently mis-sized).
+{{- $branch := dict
+  "instances" ($branchSpec.instances | default 1)
+  "storage" (dict
+    "size" ($branchStorageSpec.size | default "")
+    "class" ($branchStorageSpec.class | default "psql")
+  )
+}}
+
+# ==============================================================================
+# Postgres version — must match source's major for snapshot recovery to
+# succeed. No default: omit `imageName` downstream so CNPG falls back to its
+# operator default (matches the chart's pinned PG when source tracks it).
+# ==============================================================================
+{{- $pgSpec := $spec.postgresql | default dict }}
+{{- $postgresql := dict
+  "version" ($pgSpec.version | default "")
+}}
+
+# ==============================================================================
+# Integration toggles
+# ==============================================================================
+{{- $s2zSpec := $spec.scaleToZero | default dict }}
+{{- $s2zEnabled := true }}
+{{- if hasKey $s2zSpec "enabled" }}
+  {{- $s2zEnabled = $s2zSpec.enabled }}
+{{- end }}
+{{- $scaleToZero := dict
+  "enabled" $s2zEnabled
+  "idleTimeout" ($s2zSpec.idleTimeout | default "10m")
+}}
+
+{{- $ttlSpec := $spec.ttl | default dict }}
+{{- $ttlEnabled := false }}
+{{- if hasKey $ttlSpec "enabled" }}
+  {{- $ttlEnabled = $ttlSpec.enabled }}
+{{- end }}
+{{- $ttl := dict
+  "enabled" $ttlEnabled
+  "after" ($ttlSpec.after | default "168h")
+}}
+
+# ==============================================================================
+# Escape hatch
+# ==============================================================================
+{{- $cnpgSpec := $spec.cnpg | default dict }}
+{{- $cnpg := dict
+  "values" ($cnpgSpec.values | default dict)
+  "overrideAllValues" ($cnpgSpec.overrideAllValues | default dict)
+}}
+
+# ==============================================================================
+# Initialize $state
+# ==============================================================================
+{{- $state := dict
+  "name" $name
+  "namespace" $namespace
+  "clusterName" $clusterName
+  "managementPolicies" $managementPolicies
+  "labels" $labels
+  "kubernetesProviderConfigRef" $k8sProviderConfigRef
+  "source" $source
+  "crossNamespace" $crossNamespace
+  "branch" $branch
+  "postgresql" $postgresql
+  "scaleToZero" $scaleToZero
+  "ttl" $ttl
+  "cnpg" $cnpg
+  "observed" (dict)
+  "status" (dict)
+}}

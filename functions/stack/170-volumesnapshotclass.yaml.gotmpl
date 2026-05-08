@@ -1,0 +1,47 @@
+# code: language=yaml
+#
+# VolumeSnapshotClass — the stack's only storage-layer composition.
+#
+# PSQLBranch references this VSC by name to fork PSQLCluster primaries via
+# CSI snapshots. The stack does NOT compose a StorageClass — it relies on
+# whatever the target cluster already provides (gp3 on EKS Auto Mode,
+# standard on kind/k3d, etc.).
+#
+# Default driver: ebs.csi.eks.amazonaws.com (EKS Auto Mode's managed EBS CSI
+# driver; sourced from $state.snapshotClass.driver in 000-state-init.yaml.gotmpl).
+# Override $spec.snapshotClass.driver for non-AWS / non-EBS providers
+# (e.g. ebs.csi.aws.com for self-managed EBS, driver.longhorn.io,
+# hostpath.csi.k8s.io).
+#
+
+{{- $snap := $state.snapshotClass }}
+{{- if $snap.enabled }}
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-volumesnapshotclass
+  annotations:
+    {{ setResourceNameAnnotation "volumesnapshotclass" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    manifest:
+      apiVersion: snapshot.storage.k8s.io/v1
+      kind: VolumeSnapshotClass
+      metadata:
+        name: {{ $snap.name }}
+        labels: {{ $state.labels | toJson }}
+      driver: {{ $snap.driver | quote }}
+      deletionPolicy: {{ $snap.deletionPolicy }}
+      {{- if $snap.parameters }}
+      parameters:
+        {{- range $k, $v := $snap.parameters }}
+        {{ $k }}: {{ $v | quote }}
+        {{- end }}
+      {{- end }}
+  providerConfigRef:
+    name: {{ $state.kubernetesProviderConfigRef.name }}
+    kind: {{ $state.kubernetesProviderConfigRef.kind }}
+{{- end }}

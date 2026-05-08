@@ -14,7 +14,21 @@ spec:
     served: true
     schema:
       openAPIV3Schema:
-        description: PSQLStack deploys the StackGres operator (with Citus support) and Atlas Operator for PostgreSQL database management and schema migrations.
+        description: |
+          PSQLStack is the platform layer for Postgres-on-Kubernetes. It composes
+          CloudNativePG (the operator), the cnpg-i-scale-to-zero plugin, the Atlas
+          Operator (declarative schema migrations), a `psql` StorageClass that
+          PSQLClusters and PSQLBranches default to, and a `psql` VolumeSnapshotClass
+          that PSQLBranch uses as a stable target for forking primaries.
+
+          The StorageClass + VolumeSnapshotClass are paired by design: snapshots
+          can only be taken of PVCs whose CSI driver matches the snapshot driver,
+          so the stack composes both with the same driver and exposes them under
+          the shared name `psql`. Default driver is `ebs.csi.eks.amazonaws.com`
+          (EKS Auto Mode); override `storageClass.provisioner` + `snapshotClass.driver`
+          together for non-EKS targets (e.g. `hostpath.csi.k8s.io` for kind tests,
+          `driver.longhorn.io` for self-managed). Per-app serving clusters live in
+          PSQLCluster; ephemeral forks in PSQLBranch.
         type: object
         properties:
           spec:
@@ -22,57 +36,103 @@ spec:
             type: object
             properties:
               clusterName:
-                description: Name of the target cluster. Used as default for helmProviderConfigRef.name and resource naming.
+                description: Name of the target cluster. Used as the default for helmProviderConfigRef.name, kubernetesProviderConfigRef.name, and label values.
                 type: string
+              namespace:
+                description: Shared namespace for the CNPG operator, scale-to-zero plugin, and Atlas operator. Per-component namespace overrides take precedence. Defaults to cnpg-system.
+                type: string
+              labels:
+                description: Custom labels merged with the stack's default labels and applied to every composed resource.
+                type: object
+                additionalProperties:
+                  type: string
+                x-kubernetes-preserve-unknown-fields: true
               managementPolicies:
-                description: Management policies for all composed resources. Defaults to ["*"].
+                description: Crossplane managementPolicies applied to every composed resource. Defaults to ["*"].
                 type: array
                 items:
                   type: string
                 default:
                 - "*"
-              labels:
-                description: Custom labels applied to all managed resources.
-                type: object
-                additionalProperties:
-                  type: string
-                x-kubernetes-preserve-unknown-fields: true
               helmProviderConfigRef:
-                description: Reference to the Helm ProviderConfig. Defaults to clusterName.
+                description: Reference to the Helm ProviderConfig used for CNPG and Atlas releases. Defaults to clusterName.
                 type: object
                 properties:
                   name:
-                    description: Name of the Helm ProviderConfig.
                     type: string
                   kind:
-                    description: Kind of the ProviderConfig. Defaults to ProviderConfig.
                     type: string
                     enum:
                     - ProviderConfig
                     - ClusterProviderConfig
-              namespace:
-                description: Shared namespace for all components. Defaults to stackgres. Per-component namespace overrides this.
-                type: string
-              stackgresOperator:
-                description: Configuration for the StackGres operator component.
+              kubernetesProviderConfigRef:
+                description: Reference to the Kubernetes ProviderConfig used for the scale-to-zero plugin manifests and the VolumeSnapshotClass. Defaults to clusterName.
                 type: object
                 properties:
                   name:
-                    description: Release name. Defaults to stackgres-operator.
+                    type: string
+                  kind:
+                    type: string
+                    enum:
+                    - ProviderConfig
+                    - ClusterProviderConfig
+              ha:
+                description: |
+                  Stack-wide HA mode. When enabled, sets replicaCount + topology spread
+                  by zone on every HA-able platform component (CNPG operator, Atlas
+                  operator, scale-to-zero plugin Deployment). Per-component values
+                  blocks can still override.
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                    default: false
+                  replicas:
+                    type: integer
+                    default: 3
+                  topologySpreadByZone:
+                    type: boolean
+                    default: true
+              cnpg:
+                description: CloudNativePG operator Helm release configuration.
+                type: object
+                properties:
+                  name:
+                    description: Helm release name. Defaults to cloudnative-pg.
                     type: string
                   namespace:
                     description: Namespace override for this component.
                     type: string
+                  chartVersion:
+                    description: CNPG Helm chart version. Defaults to 0.27.1 (tracks CNPG 1.29.x).
+                    type: string
                   values:
-                    description: Helm values merged with chart defaults.
+                    description: Helm values merged with the stack's chart defaults.
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
                   overrideAllValues:
                     description: Helm values that replace all defaults for this component.
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
+              scaleToZeroPlugin:
+                description: |
+                  cnpg-i-scale-to-zero plugin (github.com/xataio/cnpg-i-scale-to-zero).
+                  Installed via the upstream release manifest. Zero cost when no
+                  PSQLCluster opts into scale-to-zero. Requires cert-manager on the
+                  target cluster (provided by aws-cert-stack).
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                    default: true
+                  version:
+                    description: Plugin release tag. Defaults to v0.1.7.
+                    type: string
+                  namespace:
+                    description: Namespace override. Defaults to the shared namespace.
+                    type: string
               atlasOperator:
-                description: Configuration for the Atlas Operator component (database schema migrations).
+                description: Atlas Operator Helm release configuration. Manages declarative database schema migrations.
                 type: object
                 properties:
                   name:
@@ -82,12 +142,100 @@ spec:
                     description: Namespace override for this component.
                     type: string
                   values:
-                    description: Helm values merged with chart defaults.
+                    description: Helm values merged with the stack's chart defaults.
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
                   overrideAllValues:
                     description: Helm values that replace all defaults for this component.
                     type: object
+                    x-kubernetes-preserve-unknown-fields: true
+              storageClass:
+                description: |
+                  StorageClass that PSQLCluster and PSQLBranch default their PVCs to.
+                  Pairs with `snapshotClass` — VolumeSnapshot only works when the
+                  snapshotter driver matches the StorageClass provisioner, so the
+                  stack composes both with the same CSI driver under the shared
+                  name "psql". Default provisioner is `ebs.csi.eks.amazonaws.com`
+                  with `type: gp3` parameters (EKS Auto Mode's managed driver).
+                  For non-EKS targets, override `provisioner` + `parameters` to
+                  match (e.g. `hostpath.csi.k8s.io` with empty parameters for kind,
+                  `driver.longhorn.io` for self-managed Longhorn).
+                type: object
+                properties:
+                  enabled:
+                    description: Compose the StorageClass. Defaults to true.
+                    type: boolean
+                    default: true
+                  name:
+                    description: StorageClass name. Defaults to "psql" — PSQLCluster + PSQLBranch reference this name.
+                    type: string
+                    default: psql
+                  provisioner:
+                    description: CSI driver name. Defaults to ebs.csi.eks.amazonaws.com (EKS Auto Mode). Must match snapshotClass.driver for VolumeSnapshot to work.
+                    type: string
+                    default: ebs.csi.eks.amazonaws.com
+                  reclaimPolicy:
+                    description: Reclaim policy. Defaults to Delete.
+                    type: string
+                    enum:
+                    - Delete
+                    - Retain
+                    default: Delete
+                  volumeBindingMode:
+                    description: Volume binding mode. Defaults to WaitForFirstConsumer (matches EKS Auto Mode's gp3 default and is correct for zonal CSI drivers).
+                    type: string
+                    enum:
+                    - Immediate
+                    - WaitForFirstConsumer
+                    default: WaitForFirstConsumer
+                  allowVolumeExpansion:
+                    description: Allow online PVC expansion. Defaults to true (CNPG resizes via the same field on the Cluster CR).
+                    type: boolean
+                    default: true
+                  parameters:
+                    description: |
+                      Provisioner-specific parameters. Defaults to `{type: gp3}` for
+                      the EBS provisioner. When overriding `provisioner`, set this
+                      to whatever the new provisioner expects (e.g. `{}` for
+                      hostpath.csi.k8s.io, driver-specific keys for Longhorn).
+                    type: object
+                    additionalProperties:
+                      type: string
+                    x-kubernetes-preserve-unknown-fields: true
+              snapshotClass:
+                description: |
+                  VolumeSnapshotClass that PSQLBranch references when forking a
+                  PSQLCluster's PVC. Pairs with `storageClass`: the driver must
+                  match the StorageClass provisioner. Default driver is
+                  `ebs.csi.eks.amazonaws.com` (EKS Auto Mode); override for
+                  other CSI providers (`hostpath.csi.k8s.io` on kind,
+                  `driver.longhorn.io` for self-managed Longhorn, etc.).
+                type: object
+                properties:
+                  enabled:
+                    description: Compose the VolumeSnapshotClass. Defaults to true.
+                    type: boolean
+                    default: true
+                  name:
+                    description: VolumeSnapshotClass name. Defaults to "psql" — PSQLBranch references this name.
+                    type: string
+                    default: psql
+                  driver:
+                    description: CSI driver. Defaults to ebs.csi.eks.amazonaws.com. Must match storageClass.provisioner.
+                    type: string
+                    default: ebs.csi.eks.amazonaws.com
+                  deletionPolicy:
+                    description: Snapshot deletion policy. Defaults to Delete.
+                    type: string
+                    enum:
+                    - Delete
+                    - Retain
+                    default: Delete
+                  parameters:
+                    description: Driver-specific parameters passed to the VolumeSnapshotClass.
+                    type: object
+                    additionalProperties:
+                      type: string
                     x-kubernetes-preserve-unknown-fields: true
             required:
             - clusterName
@@ -96,7 +244,7 @@ spec:
             type: object
             properties:
               ready:
-                description: Overall readiness of the PostgreSQL stack.
+                description: Overall readiness — true once every enabled component is Ready (CNPG, Atlas, the scale-to-zero plugin if `scaleToZeroPlugin.enabled`, the StorageClass if `storageClass.enabled`, and the VolumeSnapshotClass if `snapshotClass.enabled`). Disabled components are treated as Ready.
                 type: boolean
         required:
         - spec

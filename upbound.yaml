@@ -12,18 +12,26 @@ spec:
     kind: Provider
     package: xpkg.crossplane.io/crossplane-contrib/provider-helm
     version: '>=v1'
-  description: PostgreSQL stack deploying StackGres operator (with Citus support)
-    and Atlas Operator for schema migrations as Helm releases.
+  - apiVersion: pkg.crossplane.io/v1
+    kind: Provider
+    package: xpkg.crossplane.io/crossplane-contrib/provider-kubernetes
+    version: '>=v1'
+  description: PostgreSQL stack deploying CloudNativePG, the cnpg-i-scale-to-zero
+    plugin, and the Atlas Operator as Helm releases, with an optional dedicated Karpenter
+    NodePool. Platform layer — per-app serving clusters live in PSQLCluster.
   license: Apache-2.0
   maintainer: Patrick Lee Scott <pat@patscott.io>
   readme: |
     # psql-stack
 
-    Deploys a PostgreSQL management stack with correct deletion ordering.
-    Composes StackGres operator and Atlas Operator as direct Helm releases.
+    Deploys a PostgreSQL platform stack with correct deletion ordering.
+    Composes CloudNativePG, the cnpg-i-scale-to-zero plugin, and the Atlas
+    Operator as direct Helm releases / applied manifests.
 
-    StackGres provides full PostgreSQL lifecycle management with native Citus
-    support via SGShardedCluster CRDs. Atlas Operator provides declarative
-    database schema migrations via AtlasMigration and AtlasSchema CRDs.
+    CloudNativePG is a CNCF operator that manages the full lifecycle of
+    PostgreSQL clusters on Kubernetes. The cnpg-i-scale-to-zero plugin
+    (github.com/xataio/cnpg-i-scale-to-zero) automatically hibernates
+    inactive clusters. Atlas Operator provides declarative database schema
+    migrations via AtlasMigration and AtlasSchema CRDs.
   repository: ghcr.io/hops-ops/psql-stack
   source: github.com/hops-ops/psql-stack

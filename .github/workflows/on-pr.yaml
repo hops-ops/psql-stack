@@ -27,28 +27,72 @@ permissions:
 
 jobs:
   validate:
-    uses: unbounded-tech/workflows-crossplane/.github/workflows/validate.yaml@v2.20.0
+    uses: hops-ops/workflows-crossplane/.github/workflows/validate.yaml@v3.0.0
     with:
       examples: |
         [
-          { "example": "examples/psqlstacks/minimal.yaml" },
-          { "example": "examples/psqlstacks/standard.yaml" }
+          { "example": "examples/psqlstacks/minimal.yaml",   "api_path": "apis/psqlstacks" },
+          { "example": "examples/psqlstacks/standard.yaml",  "api_path": "apis/psqlstacks" },
+          { "example": "examples/psqlclusters/minimal.yaml", "api_path": "apis/psqlclusters" },
+          { "example": "examples/psqlclusters/standard.yaml","api_path": "apis/psqlclusters" },
+          { "example": "examples/psqlbranches/same-namespace.yaml", "api_path": "apis/psqlbranches" }
         ]
-      api_path: apis/psqlstacks
       error_on_missing_schemas: true
 
   test:
-    uses: unbounded-tech/workflows-crossplane/.github/workflows/test.yaml@v2.20.0
+    uses: hops-ops/workflows-crossplane/.github/workflows/test.yaml@v3.0.0
 
   e2e:
-    uses: unbounded-tech/workflows-crossplane/.github/workflows/e2e.yaml@v2.20.0
+    uses: hops-ops/workflows-crossplane/.github/workflows/e2e.yaml@v3.0.0
+    with:
+      # E2E provisions a real EKS Auto Mode cluster (mirror of aws-observe-stack)
+      # so the `psql` StorageClass + VolumeSnapshotClass land on a real
+      # ebs.csi.eks.amazonaws.com driver — same code path that runs on
+      # pat-local. Kind has no snapshot-capable CSI, so the prior kind-only
+      # e2e couldn't exercise PSQLBranch's snapshot/fork chain.
+      aws: true
+      aws-use-oidc: true
+      aws-account-id: "034489662075"
+      aws-region: us-east-2
+      aws-role-duration-seconds: 7200
+      write-env-files: true
+      env-vars: |
+        {
+          "ADMIN_ROLE_ARN": "${{ vars.ADMIN_ROLE_ARN }}",
+          "PRIVATE_SUBNET_ID_A": "${{ vars.PRIVATE_SUBNET_ID_A }}",
+          "PRIVATE_SUBNET_ID_B": "${{ vars.PRIVATE_SUBNET_ID_B }}"
+        }
+      debug-resource-types: |
+        [
+          "psqlstacks.hops.ops.com.ai",
+          "psqlclusters.hops.ops.com.ai",
+          "psqlbranches.hops.ops.com.ai",
+          "volumesnapshotstacks.hops.ops.com.ai",
+          "certstacks.hops.ops.com.ai",
+          "autoeksclusters.aws.hops.ops.com.ai"
+        ]
+      # AutoEKSCluster outlives the manifests' cascade delete; the workflow
+      # tears it down separately. VolumeSnapshotStack + CertStack are
+      # colocated with the cluster — drop them together so their Helm
+      # releases on the EKS cluster are uninstalled before the cluster goes.
+      delete-extra-resources: |
+        [
+          "volumesnapshotstacks.hops.ops.com.ai",
+          "certstacks.hops.ops.com.ai",
+          "autoeksclusters.aws.hops.ops.com.ai"
+        ]
+      # 90 min: ~10–15 min EKS Auto Mode cold start, then platform install +
+      # CNPG bootstrap + snapshot fork.
+      timeout-minutes: 90
+      cleanup-timeout-minutes: 30
+      delete-extra-resources-timeout-minutes: 30
 
   publish:
     needs:
       - validate
       - test
       - e2e
-    uses: unbounded-tech/workflows-crossplane/.github/workflows/publish.yaml@v2.20.0
+    uses: hops-ops/workflows-crossplane/.github/workflows/publish.yaml@v3.0.0
     secrets: inherit
     with:
       tag: pr-${{ github.event.pull_request.number }}-${{ github.sha }}

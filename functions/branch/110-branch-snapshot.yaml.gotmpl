@@ -1,0 +1,45 @@
+# code: language=yaml
+#
+# Branch-namespace VolumeSnapshot — bound to either the source PVC directly
+# (same-namespace branching) or to the VolumeSnapshotContent created from
+# the source-namespace VolumeSnapshot (cross-namespace branching).
+#
+# The branch's CNPG Cluster references this VolumeSnapshot for
+# `bootstrap.recovery.volumeSnapshots.storage.name` — recovery requires
+# the VolumeSnapshot to be in the same namespace as the new Cluster.
+#
+
+{{- $source := $state.source }}
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-branch-snapshot
+  annotations:
+    {{ setResourceNameAnnotation "branch-snapshot" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    manifest:
+      apiVersion: snapshot.storage.k8s.io/v1
+      kind: VolumeSnapshot
+      metadata:
+        name: {{ $state.name }}-snap
+        namespace: {{ $state.namespace }}
+        labels: {{ $state.labels | toJson }}
+      spec:
+        volumeSnapshotClassName: {{ $source.snapshotClassName }}
+        source:
+          {{- if $state.crossNamespace }}
+          # Cross-ns branching — bind to the VolumeSnapshotContent created from
+          # the source-ns VolumeSnapshot. The content name is observed on the
+          # source-ns Object's status; static binding works once that exists.
+          volumeSnapshotContentName: {{ $state.observed.snapshotContent | quote }}
+          {{- else }}
+          # Same-ns branching — reference the source PVC directly.
+          persistentVolumeClaimName: {{ $source.pvcName }}
+          {{- end }}
+  providerConfigRef:
+    name: {{ $state.kubernetesProviderConfigRef.name }}
+    kind: {{ $state.kubernetesProviderConfigRef.kind }}

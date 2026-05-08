@@ -1,0 +1,56 @@
+# code: language=yaml
+#
+# Extract observed state from composed resources
+#
+
+{{- $observed := $.observed.resources | default dict }}
+
+# Branch CNPG Cluster phase — wraps the same provider-kubernetes Object pattern
+# as PSQLCluster.
+{{- $clusterEntry := get $observed "cnpg-cluster" | default dict }}
+{{- $clusterResource := $clusterEntry.resource | default dict }}
+{{- $clusterAtProvider := (($clusterResource.status | default dict).atProvider | default dict) }}
+{{- $clusterManifest := $clusterAtProvider.manifest | default dict }}
+{{- $clusterStatus := $clusterManifest.status | default dict }}
+{{- $clusterPhase := $clusterStatus.phase | default "" }}
+
+# Read the bound VolumeSnapshotContent name. Two paths:
+#   - same-namespace: only `branch-snapshot` exists (it references the source
+#     PVC directly), so we read from it.
+#   - cross-namespace: both `source-snapshot` (in source ns) and
+#     `branch-snapshot` (in branch ns) exist. The branch-ns snapshot can only
+#     bind once it learns the source's content name (propagated through this
+#     status field into 110-branch-snapshot's render), so reading branch-ns
+#     first creates a chicken-and-egg: empty branch content overwrites the
+#     populated source content. Prefer branch-ns only when its content is
+#     non-empty; otherwise fall back to source-ns.
+{{- $snapEntryBranch := get $observed "branch-snapshot" | default dict }}
+{{- $branchResource := $snapEntryBranch.resource | default dict }}
+{{- $branchAtProvider := (($branchResource.status | default dict).atProvider | default dict) }}
+{{- $branchManifest := $branchAtProvider.manifest | default dict }}
+{{- $branchStatus := $branchManifest.status | default dict }}
+{{- $branchContent := $branchStatus.boundVolumeSnapshotContentName | default "" }}
+
+{{- $snapEntrySource := get $observed "source-snapshot" | default dict }}
+{{- $sourceResource := $snapEntrySource.resource | default dict }}
+{{- $sourceAtProvider := (($sourceResource.status | default dict).atProvider | default dict) }}
+{{- $sourceManifest := $sourceAtProvider.manifest | default dict }}
+{{- $sourceStatus := $sourceManifest.status | default dict }}
+{{- $sourceContent := $sourceStatus.boundVolumeSnapshotContentName | default "" }}
+
+{{- $snapContent := $branchContent }}
+{{- if not $branchContent }}
+  {{- $snapContent = $sourceContent }}
+{{- end }}
+
+{{- $state = set $state "observed" (dict
+  "cluster" (dict "phase" $clusterPhase)
+  "snapshotContent" $snapContent
+) }}
+
+{{- $state = set $state "status" (dict
+  "ready" false
+  "bootstrapPhase" $clusterPhase
+  "bootstrapMethod" "volumeSnapshot"
+  "sourceSnapshotContent" $snapContent
+) }}

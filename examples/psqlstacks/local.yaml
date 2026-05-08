@@ -1,3 +1,9 @@
+# Local: dev cluster without a CSI snapshot controller.
+#
+# Disables the VolumeSnapshotClass composition (PSQLBranch won't work but
+# PSQLCluster still does), and points at a local Helm/Kubernetes
+# ProviderConfig instead of the per-cluster ProviderConfig pattern.
+#
 apiVersion: hops.ops.com.ai/v1alpha1
 kind: PSQLStack
 metadata:
@@ -7,3 +13,9 @@ spec:
   clusterName: local
   helmProviderConfigRef:
     name: default
+  kubernetesProviderConfigRef:
+    name: default
+  snapshotClass:
+    enabled: false
+  scaleToZeroPlugin:
+    enabled: false

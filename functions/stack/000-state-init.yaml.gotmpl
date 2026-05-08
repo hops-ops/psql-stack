@@ -1,0 +1,148 @@
+# code: language=yaml
+#
+# Initialize $state with spec defaults
+#
+
+{{- $xr := getCompositeResource . }}
+{{- $spec := $xr.spec | default dict }}
+{{- $metadata := $xr.metadata | default dict }}
+
+# ==============================================================================
+# Core defaults
+# ==============================================================================
+{{- $name := $metadata.name | default "psql" }}
+{{- $clusterName := $spec.clusterName | default $name }}
+{{- $namespace := $spec.namespace | default "cnpg-system" }}
+{{- $managementPolicies := $spec.managementPolicies | default (list "*") }}
+
+# Labels
+{{- $defaultLabels := dict
+  "hops.ops.com.ai/managed" "true"
+  "hops.ops.com.ai/psql" $name
+}}
+{{- $labels := merge $defaultLabels ($spec.labels | default dict) }}
+
+# Helm provider config (defaults to clusterName)
+{{- $helmProviderConfigRef := $spec.helmProviderConfigRef | default dict }}
+{{- $helmProviderConfigRef = dict
+  "name" ($helmProviderConfigRef.name | default $clusterName)
+  "kind" ($helmProviderConfigRef.kind | default "ProviderConfig")
+}}
+
+# Kubernetes provider config (defaults to clusterName)
+{{- $k8sProviderConfigRef := $spec.kubernetesProviderConfigRef | default dict }}
+{{- $k8sProviderConfigRef = dict
+  "name" ($k8sProviderConfigRef.name | default $clusterName)
+  "kind" ($k8sProviderConfigRef.kind | default "ProviderConfig")
+}}
+
+# ==============================================================================
+# HA mode — stack-wide replica + topology-spread defaults injected into each
+# platform component. Per-component values blocks can still override.
+# ==============================================================================
+{{- $haSpec := $spec.ha | default dict }}
+{{- $haEnabled := false }}
+{{- if hasKey $haSpec "enabled" }}
+  {{- $haEnabled = $haSpec.enabled }}
+{{- end }}
+{{- $haReplicas := $haSpec.replicas | default 3 }}
+{{- $haSpreadByZone := true }}
+{{- if hasKey $haSpec "topologySpreadByZone" }}
+  {{- $haSpreadByZone = $haSpec.topologySpreadByZone }}
+{{- end }}
+{{- $ha := dict
+  "enabled" $haEnabled
+  "replicas" $haReplicas
+  "topologySpreadByZone" $haSpreadByZone
+}}
+
+# ==============================================================================
+# Per-component configuration
+# ==============================================================================
+{{- $cnpg := $spec.cnpg | default dict }}
+{{- $s2z := $spec.scaleToZeroPlugin | default dict }}
+{{- $s2zEnabled := true }}
+{{- if hasKey $s2z "enabled" }}
+  {{- $s2zEnabled = $s2z.enabled }}
+{{- end }}
+{{- $atlas := $spec.atlasOperator | default dict }}
+
+# ==============================================================================
+# StorageClass + VolumeSnapshotClass — paired storage-layer composition.
+#
+# PSQLCluster + PSQLBranch default their PVCs to the composed StorageClass;
+# PSQLBranch references the VolumeSnapshotClass when forking primaries. The
+# two CSI drivers MUST match (snapshotter only operates on PVCs whose
+# provisioner matches its driver), so they default to the same value
+# (ebs.csi.eks.amazonaws.com — EKS Auto Mode's managed EBS CSI driver).
+# Override both together for non-EKS targets (hostpath.csi.k8s.io for kind,
+# driver.longhorn.io for self-managed Longhorn, etc.).
+# ==============================================================================
+{{- $storageSpec := $spec.storageClass | default dict }}
+{{- $storageEnabled := true }}
+{{- if hasKey $storageSpec "enabled" }}
+  {{- $storageEnabled = $storageSpec.enabled }}
+{{- end }}
+{{- $storageAllowExpansion := true }}
+{{- if hasKey $storageSpec "allowVolumeExpansion" }}
+  {{- $storageAllowExpansion = $storageSpec.allowVolumeExpansion }}
+{{- end }}
+{{- $defaultStorageParams := dict "type" "gp3" }}
+{{- $storageClass := dict
+  "enabled" $storageEnabled
+  "name" ($storageSpec.name | default "psql")
+  "provisioner" ($storageSpec.provisioner | default "ebs.csi.eks.amazonaws.com")
+  "reclaimPolicy" ($storageSpec.reclaimPolicy | default "Delete")
+  "volumeBindingMode" ($storageSpec.volumeBindingMode | default "WaitForFirstConsumer")
+  "allowVolumeExpansion" $storageAllowExpansion
+  "parameters" ($storageSpec.parameters | default $defaultStorageParams)
+}}
+
+{{- $snapshotSpec := $spec.snapshotClass | default dict }}
+{{- $snapshotEnabled := true }}
+{{- if hasKey $snapshotSpec "enabled" }}
+  {{- $snapshotEnabled = $snapshotSpec.enabled }}
+{{- end }}
+{{- $snapshotClass := dict
+  "enabled" $snapshotEnabled
+  "name" ($snapshotSpec.name | default "psql")
+  "driver" ($snapshotSpec.driver | default "ebs.csi.eks.amazonaws.com")
+  "deletionPolicy" ($snapshotSpec.deletionPolicy | default "Delete")
+  "parameters" ($snapshotSpec.parameters | default dict)
+}}
+
+# ==============================================================================
+# Initialize $state
+# ==============================================================================
+{{- $state := dict
+  "name" $name
+  "clusterName" $clusterName
+  "namespace" $namespace
+  "managementPolicies" $managementPolicies
+  "labels" $labels
+  "helmProviderConfigRef" $helmProviderConfigRef
+  "kubernetesProviderConfigRef" $k8sProviderConfigRef
+  "ha" $ha
+  "cnpg" (dict
+    "name" ($cnpg.name | default "cloudnative-pg")
+    "namespace" ($cnpg.namespace | default $namespace)
+    "chartVersion" ($cnpg.chartVersion | default "0.27.1")
+    "values" ($cnpg.values | default dict)
+    "overrideAllValues" ($cnpg.overrideAllValues | default dict)
+  )
+  "scaleToZeroPlugin" (dict
+    "enabled" $s2zEnabled
+    "version" ($s2z.version | default "v0.1.7")
+    "namespace" ($s2z.namespace | default $namespace)
+  )
+  "atlasOperator" (dict
+    "name" ($atlas.name | default "atlas-operator")
+    "namespace" ($atlas.namespace | default $namespace)
+    "values" ($atlas.values | default dict)
+    "overrideAllValues" ($atlas.overrideAllValues | default dict)
+  )
+  "storageClass" $storageClass
+  "snapshotClass" $snapshotClass
+  "observed" (dict)
+  "status" (dict)
+}}

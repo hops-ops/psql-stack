@@ -1,0 +1,326 @@
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: psqlclusters.hops.ops.com.ai
+spec:
+  group: hops.ops.com.ai
+  names:
+    kind: PSQLCluster
+    plural: psqlclusters
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    referenceable: true
+    served: true
+    schema:
+      openAPIV3Schema:
+        description: |
+          PSQLCluster is the per-app Postgres primitive. Composes a CloudNativePG
+          `Cluster` plus the wiring (annotations, plugin entries, labels) required
+          for the platform integrations (scale-to-zero, branching, monitoring, HA).
+
+          Companion to `psql-stack` (which provides the CNPG operator + S2Z plugin
+          substrate; required as a target-cluster prerequisite) and to `psql-branch`
+          (which composes ephemeral CoW forks of a PSQLCluster via VolumeSnapshot).
+
+          Intent-first surface: integration toggles (`scaleToZero.enabled`,
+          `branching.enabled`, `monitoring.enabled`, `ha.enabled`) translate to
+          CNPG mechanics inside the render template — consumer manifests don't
+          reach for `cnpg.overrideAllValues` unless their use case is genuinely
+          novel.
+        type: object
+        properties:
+          spec:
+            description: PSQLClusterSpec defines the desired state.
+            type: object
+            properties:
+              clusterName:
+                description: Name of the target cluster. Used as default for kubernetesProviderConfigRef.name and label values.
+                type: string
+              labels:
+                description: Custom labels merged with stack defaults; applied to every composed resource.
+                type: object
+                additionalProperties:
+                  type: string
+                x-kubernetes-preserve-unknown-fields: true
+              managementPolicies:
+                description: Crossplane managementPolicies applied to every composed resource. Defaults to ["*"].
+                type: array
+                items:
+                  type: string
+                default:
+                - "*"
+              kubernetesProviderConfigRef:
+                description: Reference to the Kubernetes ProviderConfig used to apply the Cluster CR + ExternalSecret. Defaults to clusterName.
+                type: object
+                properties:
+                  name:
+                    type: string
+                  kind:
+                    type: string
+                    enum:
+                    - ProviderConfig
+                    - ClusterProviderConfig
+
+              # ============================================================
+              # Sizing
+              # ============================================================
+              instances:
+                description: Number of Postgres instances. Default 1 (single-node). HA mode bumps to ha.replicas.
+                type: integer
+                default: 1
+              storage:
+                description: Postgres data PVC sizing. Online expansion is supported by CNPG when allowVolumeExpansion is true on the StorageClass (the stack's `psql` SC sets this) — bumping `size` upward grows the volume in place with no downtime.
+                type: object
+                properties:
+                  size:
+                    description: PVC size, e.g. "10Gi". Required.
+                    type: string
+                  class:
+                    description: StorageClass name. Defaults to "psql" — the StorageClass composed by PSQLStack. Override only to opt out of the stack's paired SC + VSC (e.g. for a different driver on the same cluster).
+                    type: string
+                    default: psql
+                required:
+                - size
+
+              # ============================================================
+              # Postgres
+              # ============================================================
+              postgresql:
+                description: Postgres version + tuning parameters.
+                type: object
+                properties:
+                  version:
+                    description: Postgres major version. Defaults to "17".
+                    type: string
+                    default: "17"
+                  parameters:
+                    description: postgres.conf parameters (e.g. `shared_buffers`, `max_connections`).
+                    type: object
+                    additionalProperties:
+                      type: string
+                    x-kubernetes-preserve-unknown-fields: true
+
+              # ============================================================
+              # Application user — the role your app connects as.
+              #
+              # Three modes, in order of typical use:
+              #   1. Omit `app` (or set only role/database) — CNPG generates a
+              #      basic-auth Secret named `<cluster-name>-app` and owns
+              #      its lifecycle. Zero-config; use for ephemeral or kind-only
+              #      setups.
+              #   2. Set `app.externalSecret` — composition renders an ESO
+              #      ExternalSecret pulling from the named (Cluster)SecretStore
+              #      and writes the K8s Secret CNPG reads. Common production
+              #      shape on platforms with External Secrets Operator wired up.
+              #   3. Set `app.secretName` (without `externalSecret`) — BYO; you
+              #      pre-create the named K8s Secret with `username`+`password`
+              #      keys before the cluster bootstraps.
+              # ============================================================
+              app:
+                description: Application user — the Postgres role your app connects as. CNPG uses these credentials for `bootstrap.initdb`.
+                type: object
+                properties:
+                  role:
+                    description: Postgres role name owning the application database. Defaults to "app".
+                    type: string
+                    default: app
+                  database:
+                    description: Application database name. Defaults to "app".
+                    type: string
+                    default: app
+                  secretName:
+                    description: K8s Secret holding the app role's credentials. Setting this opts into BYO mode — pre-create the Secret with `username`+`password` keys. Leave unset (and omit `externalSecret`) to let CNPG auto-generate `<cluster-name>-app`.
+                    type: string
+                    default: ""
+                  externalSecret:
+                    description: Source the credentials via External Secrets Operator. Omit to either BYO the K8s Secret named `secretName`, or — when `secretName` is also unset — let CNPG auto-generate.
+                    type: object
+                    properties:
+                      secretStore:
+                        description: Reference to the SecretStore or ClusterSecretStore providing the value.
+                        type: object
+                        properties:
+                          kind:
+                            description: Store kind. Use ClusterSecretStore for cluster-scoped stores (the platform default), SecretStore for namespaced stores in this XR's namespace.
+                            type: string
+                            enum:
+                            - ClusterSecretStore
+                            - SecretStore
+                            default: ClusterSecretStore
+                          name:
+                            description: Name of the SecretStore or ClusterSecretStore.
+                            type: string
+                          namespace:
+                            description: Namespace of the SecretStore (ignored for ClusterSecretStore). Defaults to the PSQLCluster's namespace.
+                            type: string
+                        required:
+                        - name
+                      secretRef:
+                        description: Where in the secrets backend the credentials live. The remote value must be a JSON blob with `username` and `password` properties — both are extracted into the resulting K8s Secret.
+                        type: object
+                        properties:
+                          path:
+                            description: Path/key in the secrets backend (e.g. AWS Secrets Manager `my-cluster/app`).
+                            type: string
+                        required:
+                        - path
+                    required:
+                    - secretStore
+                    - secretRef
+
+              # ============================================================
+              # Postgres superuser — optional. Omit the block to let CNPG
+              # auto-generate the superuser secret at `<cluster-name>-superuser`.
+              # Set when tooling needs the superuser password sourced from a
+              # specific secrets backend (e.g. schema migration platforms).
+              # ============================================================
+              superuser:
+                description: Optional postgres superuser credentials. Omit the block to let CNPG auto-generate the superuser secret.
+                type: object
+                properties:
+                  secretName:
+                    description: K8s Secret holding the superuser credentials. Defaults to "<cluster-name>-superuser".
+                    type: string
+                    default: ""
+                  externalSecret:
+                    description: Source the superuser credentials via External Secrets Operator. Omit to BYO the K8s Secret named `secretName`.
+                    type: object
+                    properties:
+                      secretStore:
+                        description: Reference to the SecretStore or ClusterSecretStore providing the value.
+                        type: object
+                        properties:
+                          kind:
+                            description: Store kind. Use ClusterSecretStore for cluster-scoped stores (the platform default), SecretStore for namespaced stores in this XR's namespace.
+                            type: string
+                            enum:
+                            - ClusterSecretStore
+                            - SecretStore
+                            default: ClusterSecretStore
+                          name:
+                            description: Name of the SecretStore or ClusterSecretStore.
+                            type: string
+                          namespace:
+                            description: Namespace of the SecretStore (ignored for ClusterSecretStore). Defaults to the PSQLCluster's namespace.
+                            type: string
+                        required:
+                        - name
+                      secretRef:
+                        description: Where in the secrets backend the credentials live. The remote value must be a JSON blob with `username` and `password` properties — both are extracted into the resulting K8s Secret.
+                        type: object
+                        properties:
+                          path:
+                            description: Path/key in the secrets backend (e.g. AWS Secrets Manager `my-cluster/superuser`).
+                            type: string
+                        required:
+                        - path
+                    required:
+                    - secretStore
+                    - secretRef
+
+              # ============================================================
+              # Cross-stack integration toggles
+              # ============================================================
+              scaleToZero:
+                description: Auto-hibernate the cluster after `idleTimeout` of no client activity. Requires the cnpg-i-scale-to-zero plugin on the target cluster (provided by psql-stack). When `ha.enabled` is also true, the cluster will not actually scale to zero (HA implies always-available); a Warning condition is emitted on the XR but the annotation is rendered for tooling that reads it.
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                    default: false
+                  idleTimeout:
+                    description: How long the cluster must be idle before hibernating. Defaults to "30m".
+                    type: string
+                    default: 30m
+
+              branching:
+                description: Mark this cluster as a fork-source. PSQLBranch finds branchable clusters by reading the labels emitted here. Default-on (cheap when unused — just metadata).
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                    default: true
+                  snapshotClassName:
+                    description: VolumeSnapshotClass name composed by psql-stack (default "psql"). PSQLBranch references this name to fork the cluster's PVC.
+                    type: string
+                    default: psql
+
+              monitoring:
+                description: Add Prometheus scrape configuration. CNPG operator handles the actual PodMonitor creation when `monitoring.enablePodMonitor` is set on the Cluster CR.
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                    default: true
+
+              # ============================================================
+              # HA
+              # ============================================================
+              ha:
+                description: Stack-wide HA. Bumps instances to `replicas` (default 3) and adds zonal topology spread.
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                    default: false
+                  replicas:
+                    type: integer
+                    default: 3
+                  topologySpreadByZone:
+                    type: boolean
+                    default: true
+
+              # ============================================================
+              # Escape hatches
+              # ============================================================
+              cnpg:
+                description: Direct passthrough into the composed Cluster CR's spec. Use for novel CNPG features not yet covered by the intent-first surface above.
+                type: object
+                properties:
+                  values:
+                    description: Merged into the Cluster.spec — adds to / overrides individual fields rendered by the template.
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  overrideAllValues:
+                    description: Replaces the entire Cluster.spec — total escape hatch.
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+            required:
+            - clusterName
+            - storage
+          status:
+            description: PSQLClusterStatus defines the observed state.
+            type: object
+            properties:
+              ready:
+                description: Overall readiness — true once the CNPG Cluster reaches `Cluster in healthy state` AND the ExternalSecret (if composed) is SecretSynced.
+                type: boolean
+              clusterPhase:
+                description: Current CNPG Cluster `.status.phase` (e.g. "Cluster in healthy state").
+                type: string
+              app:
+                description: Connection details for the application user. Other XRs can reference this to wire connection strings without hardcoding.
+                type: object
+                properties:
+                  secretName:
+                    description: K8s Secret holding the app role's credentials.
+                    type: string
+                  database:
+                    description: Application database name.
+                    type: string
+                  host:
+                    description: Service hostname for read-write connections (CNPG `<cluster>-rw` service).
+                    type: string
+                  port:
+                    description: Postgres port.
+                    type: integer
+              superuser:
+                description: Connection details for the postgres superuser.
+                type: object
+                properties:
+                  secretName:
+                    description: K8s Secret holding the superuser credentials (CNPG-managed if `spec.superuser` was not set).
+                    type: string
+        required:
+        - spec

@@ -1,32 +1,38 @@
 # psql-stack
 
-PostgreSQL management stack deploying StackGres and Atlas Operator as Helm releases with safe deletion ordering.
+PostgreSQL platform layer on top of [CloudNativePG](https://cloudnative-pg.io/). Composes the CNPG operator, the [`cnpg-i-scale-to-zero` plugin](https://github.com/xataio/cnpg-i-scale-to-zero), the [Atlas Operator](https://atlasgo.io/integrations/kubernetes/operator) (declarative schema migrations), a paired `psql` `StorageClass` + `VolumeSnapshotClass` that PSQLClusters and PSQLBranches default to.
 
-## Why psql-stack?
+This is the **platform layer** — it does not create any serving Postgres clusters. Per-app DBs live in [`PSQLCluster`](../../psql-cluster/), ephemeral forks in [`PSQLBranch`](../../psql-branch/).
 
-**Without psql-stack:**
-- Manual Helm installs of StackGres and Atlas on every cluster
-- No guaranteed deletion order — removing StackGres before Atlas leaves orphaned migration state
-- Inconsistent operator versions and configuration across environments
-- No declarative, reviewable representation of your database tooling
+## Design
 
-**With psql-stack:**
-- Single claim deploys both operators with production defaults
-- Deletion ordering enforced via Usage resources — Atlas is always removed before StackGres
-- Consistent configuration across clusters with customizable Helm values
-- Crossplane manages lifecycle, drift detection, and rollback
+- **Paired StorageClass + VolumeSnapshotClass, both named `psql`.** Snapshots only work when the snapshotter driver matches the underlying StorageClass provisioner, so the stack composes both with the same CSI driver value. PSQLClusters and PSQLBranches default `spec.storage.class: psql` (XRD default), so consumer manifests don't have to know the driver. Default driver/provisioner is `ebs.csi.eks.amazonaws.com` (EKS Auto Mode); override `storageClass.provisioner` + `snapshotClass.driver` together for non-EKS targets (kind, self-managed Longhorn, etc.).
+- **No NodePool / node-prep.** Components run wherever the cluster's scheduler puts them. Auto Mode handles node provisioning end-to-end.
 
-## What Gets Deployed
+If you need replicated CoW storage (true block-level branches with delta-only economics), that's a separate concern — see `aws-storage-stack` for self-managed nodes that can host Longhorn or similar. The default psql-stack stays on the AWS-blessed Auto Mode path.
 
-- **StackGres Operator** — Full PostgreSQL lifecycle management with native Citus support for distributed PostgreSQL via `SGShardedCluster` CRDs
-- **Atlas Operator** — Declarative database schema migrations via `AtlasMigration` and `AtlasSchema` CRDs
-- **Usage resource** — Ensures Atlas is deleted before StackGres to prevent orphaned migration state
+## Components
 
-## The Journey
+| Component | Default | Purpose |
+|---|---|---|
+| **CNPG operator** | always-on | The CNCF Postgres operator. CRDs include `Cluster`, `Backup`, `Pooler`, `ScheduledBackup`. |
+| **cnpg-i-scale-to-zero plugin** | on (`spec.scaleToZeroPlugin.enabled: true`) | Auto-hibernates idle CNPG `Cluster`s. **Requires cert-manager** (provided by [`aws-cert-stack`](../../aws/cert/)). |
+| **Atlas operator** | always-on | Declarative schema migrations via `AtlasMigration` / `AtlasSchema` CRDs. |
+| **StorageClass** | on (`spec.storageClass.enabled: true`) | Named `psql` by default. Provisioner: `ebs.csi.eks.amazonaws.com` with `type: gp3`. PSQLCluster + PSQLBranch reference it as their default `spec.storage.class`. |
+| **VolumeSnapshotClass** | on (`spec.snapshotClass.enabled: true`) | Named `psql` by default. Driver matches `storageClass.provisioner`. PSQLBranch references it for snapshot/fork. |
+| **HA mode** | off (`spec.ha.enabled: false`) | When enabled: 3 replicas + `topologySpreadConstraints` by zone on CNPG, Atlas, S2Z plugin. |
 
-### Stage 1: Getting Started
+## Prerequisites
 
-Deploy the stack on a single cluster with defaults. StackGres gets the REST API enabled, Atlas gets dev DB prewarming, and everything lands in the `stackgres` namespace.
+- **A working CSI driver** on the cluster matching `storageClass.provisioner`. EKS Auto Mode provides `ebs.csi.eks.amazonaws.com` automatically. For other targets, override `storageClass.provisioner` (and the matching `snapshotClass.driver`) to whatever the target cluster has — e.g. `hostpath.csi.k8s.io` for kind, `driver.longhorn.io` for self-managed Longhorn.
+- **VolumeSnapshot CRDs + snapshot-controller** (`snapshot.storage.k8s.io`). EKS Auto Mode ships the snapshot CRDs but **not** the cluster-wide snapshot-controller. Without one, the composed VolumeSnapshotClass is inert and PSQLBranch snapshots will never reach `ReadyToUse`. Install [`volume-snapshot-stack`](../volume-snapshot/) (also in this org) — it composes the upstream snapshot-controller via the piraeus-charts Helm chart and is the canonical CRD installer for the cluster.
+- **cert-manager** (only when `scaleToZeroPlugin.enabled` — the plugin uses cert-manager Issuer+Certificate for its gRPC TLS). Provided by [`aws-cert-stack`](../../aws/cert/).
+
+## Stages
+
+### Stage 1: Default install
+
+Deploy with all defaults. CNPG + Atlas + S2Z + a `psql` VolumeSnapshotClass for EBS.
 
 ```yaml
 apiVersion: hops.ops.com.ai/v1alpha1
@@ -38,9 +44,9 @@ spec:
   clusterName: my-cluster
 ```
 
-### Stage 2: Team Usage
+### Stage 2: Production posture
 
-Add labels for ownership tracking and customize Helm values per operator.
+HA on; per-component value tweaks; team labels for cost allocation.
 
 ```yaml
 apiVersion: hops.ops.com.ai/v1alpha1
@@ -50,21 +56,21 @@ metadata:
   namespace: default
 spec:
   clusterName: production-cluster
-  namespace: stackgres
+  namespace: cnpg-system
   labels:
     team: platform
-  stackgresOperator:
-    values:
-      deploy:
-        restapi: true
+  ha:
+    enabled: true
+    replicas: 3
+    topologySpreadByZone: true
   atlasOperator:
     values:
       prewarmDevDB: true
 ```
 
-### Stage 3: Multi-Cluster / Advanced
+### Stage 3: Non-EKS cluster
 
-Override namespaces per component, use a `ClusterProviderConfig`, or fully replace chart defaults.
+Override the SC + VSC driver together (they must match for snapshots to work). Example: self-managed cluster running Longhorn.
 
 ```yaml
 apiVersion: hops.ops.com.ai/v1alpha1
@@ -73,24 +79,38 @@ metadata:
   name: psql
   namespace: default
 spec:
-  clusterName: production-cluster
+  clusterName: edge
   helmProviderConfigRef:
-    name: production-cluster
-    kind: ClusterProviderConfig
-  stackgresOperator:
-    namespace: stackgres-system
-  atlasOperator:
-    namespace: atlas-system
-    overrideAllValues:
-      prewarmDevDB: false
-      extraEnvs:
-        - name: ATLAS_NO_UPDATE_NOTIFIER
-          value: "true"
+    name: default
+  storageClass:
+    provisioner: driver.longhorn.io
+    parameters:
+      numberOfReplicas: "3"
+  snapshotClass:
+    driver: driver.longhorn.io
 ```
 
-### Local Development
+### Stage 4: Opt out of the composed StorageClass
 
-For local clusters (e.g. kind, k3d), point at the default Helm provider:
+If the cluster already ships a suitable default StorageClass, disable composition and have PSQLCluster/PSQLBranch consumers set `spec.storage.class` explicitly.
+
+```yaml
+apiVersion: hops.ops.com.ai/v1alpha1
+kind: PSQLStack
+metadata:
+  name: psql
+  namespace: default
+spec:
+  clusterName: shared-cluster
+  helmProviderConfigRef:
+    name: default
+  storageClass:
+    enabled: false
+```
+
+### Stage 5: Local / no-snapshot cluster
+
+For dev clusters without a snapshot-controller, disable the VSC composition. PSQLBranch won't function (it needs the VSC), but PSQLCluster still works.
 
 ```yaml
 apiVersion: hops.ops.com.ai/v1alpha1
@@ -102,79 +122,84 @@ spec:
   clusterName: local
   helmProviderConfigRef:
     name: default
+  snapshotClass:
+    enabled: false
+  scaleToZeroPlugin:
+    enabled: false
 ```
 
 ## Spec Reference
 
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `clusterName` | string | Yes | — | Target cluster name. Used as default for `helmProviderConfigRef.name` |
-| `namespace` | string | No | `stackgres` | Shared namespace for both operators |
-| `labels` | object | No | — | Custom labels merged with defaults |
-| `managementPolicies` | string[] | No | `["*"]` | Crossplane management policies |
-| `helmProviderConfigRef.name` | string | No | `clusterName` | Helm ProviderConfig name |
-| `helmProviderConfigRef.kind` | enum | No | `ProviderConfig` | `ProviderConfig` or `ClusterProviderConfig` |
-| `stackgresOperator.name` | string | No | `stackgres-operator` | Helm release name |
-| `stackgresOperator.namespace` | string | No | shared `namespace` | Namespace override |
-| `stackgresOperator.values` | object | No | — | Helm values merged with chart defaults |
-| `stackgresOperator.overrideAllValues` | object | No | — | Helm values replacing all defaults |
-| `atlasOperator.name` | string | No | `atlas-operator` | Helm release name |
-| `atlasOperator.namespace` | string | No | shared `namespace` | Namespace override |
-| `atlasOperator.values` | object | No | — | Helm values merged with chart defaults |
-| `atlasOperator.overrideAllValues` | object | No | — | Helm values replacing all defaults |
-
-### Helm Values Merging
-
-Each operator supports two modes:
-
-- **`values`** — Merged with chart defaults. Use this to tweak individual settings.
-- **`overrideAllValues`** — Replaces all defaults entirely. Use this when you need full control.
-
-If both are set, `overrideAllValues` wins.
-
-**Chart defaults for StackGres:**
-```yaml
-deploy:
-  operator: true
-  restapi: true
-```
-
-**Chart defaults for Atlas:**
-```yaml
-prewarmDevDB: true
-```
-
-## Status
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `status.ready` | boolean | `true` when both operators are healthy |
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `clusterName` | string | _required_ | Target cluster name; default for `helmProviderConfigRef.name`, `kubernetesProviderConfigRef.name`, and label values |
+| `namespace` | string | `cnpg-system` | Shared namespace for CNPG, S2Z plugin, and Atlas |
+| `labels` | object | — | Custom labels merged with stack defaults |
+| `managementPolicies` | string[] | `["*"]` | Crossplane management policies |
+| `helmProviderConfigRef.name` | string | `clusterName` | Helm ProviderConfig name |
+| `helmProviderConfigRef.kind` | enum | `ProviderConfig` | `ProviderConfig` or `ClusterProviderConfig` |
+| `kubernetesProviderConfigRef.name` | string | `clusterName` | Kubernetes ProviderConfig name |
+| `kubernetesProviderConfigRef.kind` | enum | `ProviderConfig` | Same as above |
+| **HA mode** | | | |
+| `ha.enabled` | bool | `false` | Stack-wide HA toggle |
+| `ha.replicas` | int | `3` | Replica count for HA-able platform components |
+| `ha.topologySpreadByZone` | bool | `true` | Add `topologySpreadConstraint` with `topologyKey=topology.kubernetes.io/zone`, `maxSkew=1`, `whenUnsatisfiable=ScheduleAnyway` |
+| **CNPG operator** | | | |
+| `cnpg.name` | string | `cloudnative-pg` | Helm release name |
+| `cnpg.chartVersion` | string | `0.27.1` | CNPG Helm chart version (tracks CNPG 1.29.x) |
+| `cnpg.values` | object | — | Helm values merged with chart defaults |
+| `cnpg.overrideAllValues` | object | — | Helm values that replace all defaults |
+| **Scale-to-zero plugin** | | | |
+| `scaleToZeroPlugin.enabled` | bool | `true` | Install the plugin (zero-cost when no `Cluster` opts in) |
+| `scaleToZeroPlugin.version` | string | `v0.1.7` | Plugin release tag |
+| `scaleToZeroPlugin.namespace` | string | shared `namespace` | Override |
+| **Atlas operator** | | | |
+| `atlasOperator.name` | string | `atlas-operator` | Helm release name |
+| `atlasOperator.namespace` | string | shared `namespace` | Override |
+| `atlasOperator.values` | object | — | Helm values merged with chart defaults |
+| `atlasOperator.overrideAllValues` | object | — | Helm values that replace all defaults |
+| **Storage class** | | | |
+| `storageClass.enabled` | bool | `true` | Compose the StorageClass |
+| `storageClass.name` | string | `psql` | StorageClass name (PSQLCluster + PSQLBranch reference this) |
+| `storageClass.provisioner` | string | `ebs.csi.eks.amazonaws.com` | CSI driver name. Must match `snapshotClass.driver` |
+| `storageClass.reclaimPolicy` | enum | `Delete` | `Delete` or `Retain` |
+| `storageClass.volumeBindingMode` | enum | `WaitForFirstConsumer` | `Immediate` or `WaitForFirstConsumer` |
+| `storageClass.allowVolumeExpansion` | bool | `true` | Online PVC expansion (CNPG resizes via the same field on its `Cluster` CR) |
+| `storageClass.parameters` | object | `{type: gp3}` | Provisioner-specific parameters |
+| **Snapshot class** | | | |
+| `snapshotClass.enabled` | bool | `true` | Compose the VolumeSnapshotClass |
+| `snapshotClass.name` | string | `psql` | VolumeSnapshotClass name (PSQLBranch references this) |
+| `snapshotClass.driver` | string | `ebs.csi.eks.amazonaws.com` | CSI driver. Must match `storageClass.provisioner` |
+| `snapshotClass.deletionPolicy` | enum | `Delete` | `Delete` or `Retain` |
+| `snapshotClass.parameters` | object | — | Driver-specific parameters |
 
 ## Composed Resources
 
-| Resource | Kind | Purpose |
-|----------|------|---------|
-| `stackgres-operator` | `helm.m.crossplane.io/Release` | StackGres Helm release |
-| `atlas-operator` | `helm.m.crossplane.io/Release` | Atlas Operator Helm release |
-| `usage-sg-atlas` | `protection.crossplane.io/Usage` | Deletion ordering (created once both operators are ready) |
+| Resource | Kind | When |
+|---|---|---|
+| `cloudnative-pg` | `helm.m.crossplane.io/Release` | always |
+| `atlas-operator` | `helm.m.crossplane.io/Release` | always |
+| 9× `<name>-s2z-*` | `kubernetes.m.crossplane.io/Object` | `scaleToZeroPlugin.enabled: true` |
+| `<name>-storageclass` | `kubernetes.m.crossplane.io/Object` | `storageClass.enabled: true` |
+| `<name>-volumesnapshotclass` | `kubernetes.m.crossplane.io/Object` | `snapshotClass.enabled: true` |
+| Various `Usage` | `protection.crossplane.io/Usage` | when both ends Ready (deletion ordering) |
 
 ## Dependencies
 
 | Kind | Package | Version |
-|------|---------|---------|
-| Function | `crossplane-contrib/function-auto-ready` | `>=v0.6.0` |
+|---|---|---|
+| Function | `crossplane-contrib/function-auto-ready` | `>=v0.6.2` |
 | Provider | `crossplane-contrib/provider-helm` | `>=v1` |
+| Provider | `crossplane-contrib/provider-kubernetes` | `>=v1` |
 
 ## Development
 
 ```bash
-make render       # Render all examples
-make validate     # Validate against Crossplane schemas
-make test         # Run unit tests (KCL)
-make e2e          # Run E2E tests (requires cluster)
-make build        # Build the package
-make render:minimal   # Render a single example
-make validate:standard
+make render             # Render all examples
+make validate           # Validate against Crossplane schemas
+make test               # KCL render tests (assert composed resource shapes)
+make build              # Build the package
+make render:standard    # Render a single example
 ```
 
 ## License

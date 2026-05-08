@@ -1,0 +1,113 @@
+# code: language=yaml
+#
+# Branch CNPG Cluster — bootstraps from the branch-namespace VolumeSnapshot.
+#
+# CNPG bootstrap.recovery.volumeSnapshots restores the entire Postgres data
+# directory from the snapshot. Postgres roles + their hashed passwords are
+# preserved, so the branch has the same `app` user as the source — but the
+# K8s Secret holding that password is NOT auto-replicated to the branch
+# namespace. App pods that need to connect should either:
+#   - Have a copy of the source's K8s Secret in the branch ns (manual or via
+#     ESO with the same remoteKey), or
+#   - Use a SecretReflector to mirror it
+# This is documented in README.
+#
+
+{{- $cnpg := $state.cnpg }}
+
+{{- $clusterAnnotations := dict }}
+{{- if $state.scaleToZero.enabled }}
+  {{- $_ := set $clusterAnnotations "cnpg-i-scale-to-zero.xata.io/idle-timeout" $state.scaleToZero.idleTimeout }}
+{{- end }}
+{{- if $state.ttl.enabled }}
+  {{- $_ := set $clusterAnnotations "hops.ops.com.ai/ttl" $state.ttl.after }}
+{{- end }}
+
+# Branch-only labels — distinguish from PSQLCluster's `branching-source` label.
+{{- $clusterLabels := merge $state.labels (dict
+  "hops.ops.com.ai/branch-of" $state.source.name
+) }}
+
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-cnpg-cluster
+  annotations:
+    {{ setResourceNameAnnotation "cnpg-cluster" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    manifest:
+      apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      metadata:
+        name: {{ $state.name }}
+        namespace: {{ $state.namespace }}
+        {{- if $clusterAnnotations }}
+        annotations:
+          {{- range $k, $v := $clusterAnnotations }}
+          {{ $k | quote }}: {{ $v | quote }}
+          {{- end }}
+        {{- end }}
+        labels:
+          {{- range $k, $v := $clusterLabels }}
+          {{ $k }}: {{ $v | quote }}
+          {{- end }}
+      {{- if $cnpg.overrideAllValues }}
+      spec:
+        {{- toYaml $cnpg.overrideAllValues | nindent 8 }}
+      {{- else }}
+      spec:
+        {{- $clusterSpec := dict
+          "instances" $state.branch.instances
+          "bootstrap" (dict
+            "recovery" (dict
+              "volumeSnapshots" (dict
+                "storage" (dict
+                  "name" (printf "%s-snap" $state.name)
+                  "kind" "VolumeSnapshot"
+                  "apiGroup" "snapshot.storage.k8s.io"
+                )
+              )
+            )
+          )
+        }}
+        {{- /* imageName only set when version is explicit. Empty = let CNPG
+               use its operator-default image (close-enough when source tracks
+               the same chart). Hardcoding e.g. "17" was a footgun: branches
+               off PG 15/16 sources would silently mismatch and fail recovery. */}}
+        {{- if $state.postgresql.version }}
+          {{- $_ := set $clusterSpec "imageName" (printf "ghcr.io/cloudnative-pg/postgresql:%s" $state.postgresql.version) }}
+        {{- end }}
+        {{- /* Storage — size precedence: branch.storage.size > source.storage.size.
+               Both empty = omit storage.size on the Cluster CR; CNPG's webhook
+               rejects with a clear error rather than silently sizing wrong.
+               Hardcoding 10Gi here was a footgun for sources >10Gi (CNPG/EBS
+               can't shrink during recovery). class only set when provided. */}}
+        {{- $size := $state.branch.storage.size }}
+        {{- if not $size }}
+          {{- $size = $state.source.storage.size }}
+        {{- end }}
+        {{- $storage := dict }}
+        {{- if $size }}
+          {{- $_ := set $storage "size" $size }}
+        {{- end }}
+        {{- if $state.branch.storage.class }}
+          {{- $_ := set $storage "storageClass" $state.branch.storage.class }}
+        {{- end }}
+        {{- $_ := set $clusterSpec "storage" $storage }}
+        {{- if $state.scaleToZero.enabled }}
+          {{- $_ := set $clusterSpec "plugins" (list (dict
+            "name" "cnpg-i-scale-to-zero.xata.io"
+            "enabled" true
+          )) }}
+        {{- end }}
+        {{- $_ := set $clusterSpec "monitoring" (dict "enablePodMonitor" true) }}
+        {{- $mergedClusterSpec := mergeOverwrite $clusterSpec ($cnpg.values | default dict) }}
+        {{- toYaml $mergedClusterSpec | nindent 8 }}
+      {{- end }}
+  providerConfigRef:
+    name: {{ $state.kubernetesProviderConfigRef.name }}
+    kind: {{ $state.kubernetesProviderConfigRef.kind }}

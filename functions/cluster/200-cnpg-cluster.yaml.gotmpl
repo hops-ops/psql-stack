@@ -1,0 +1,116 @@
+# code: language=yaml
+#
+# CNPG Cluster CR — the core composed resource.
+#
+# Wrapped in a Crossplane Object (provider-kubernetes) so we can apply it
+# without provider-helm and so its lifecycle is owned by the PSQLCluster XR.
+#
+# Translates the intent-first integration toggles into CNPG mechanics:
+#   - scaleToZero.enabled  → annotation + plugins entry
+#   - branching.enabled    → labels for PSQLBranch consumption
+#   - monitoring.enabled   → spec.monitoring.enablePodMonitor
+#   - ha.enabled           → spec.instances + spec.affinity.topologyKey
+#
+
+{{- $cnpg := $state.cnpg }}
+
+# Annotations on the Cluster CR (for plugin tooling)
+{{- $clusterAnnotations := dict }}
+{{- if $state.scaleToZero.enabled }}
+  {{- $_ := set $clusterAnnotations "cnpg-i-scale-to-zero.xata.io/idle-timeout" $state.scaleToZero.idleTimeout }}
+{{- end }}
+
+# Labels — stack defaults + branching markers (when enabled) read by PSQLBranch
+{{- $clusterLabels := merge $state.labels (dict) }}
+{{- if $state.branching.enabled }}
+  {{- $_ := set $clusterLabels "hops.ops.com.ai/branching-source" "true" }}
+  {{- $_ := set $clusterLabels "hops.ops.com.ai/snapshot-class" $state.branching.snapshotClassName }}
+{{- end }}
+
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-cnpg-cluster
+  annotations:
+    {{ setResourceNameAnnotation "cnpg-cluster" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    manifest:
+      apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      metadata:
+        name: {{ $state.name }}
+        namespace: {{ $state.namespace }}
+        {{- if $clusterAnnotations }}
+        annotations:
+          {{- range $k, $v := $clusterAnnotations }}
+          {{ $k | quote }}: {{ $v | quote }}
+          {{- end }}
+        {{- end }}
+        labels:
+          {{- range $k, $v := $clusterLabels }}
+          {{ $k }}: {{ $v | quote }}
+          {{- end }}
+      {{- if $cnpg.overrideAllValues }}
+      spec:
+        {{- toYaml $cnpg.overrideAllValues | nindent 8 }}
+      {{- else }}
+      spec:
+        {{- /* Build the Cluster.spec from intent-first state, then mergeOverwrite
+               with $cnpg.values for fine-grained passthrough overrides. */}}
+        {{- /* When neither app.externalSecret nor an explicit app.secretName
+               is set, omit bootstrap.initdb.secret so CNPG auto-generates and
+               owns a basic-auth Secret at <cluster-name>-app. Otherwise point
+               CNPG at the secret the consumer or ESO is providing. */}}
+        {{- $initdb := dict
+          "database" $state.app.database
+          "owner" $state.app.role
+        }}
+        {{- if not $state.app.cnpgManagedSecret }}
+          {{- $_ := set $initdb "secret" (dict "name" $state.app.secretName) }}
+        {{- end }}
+        {{- $clusterSpec := dict
+          "instances" $state.instances
+          "imageName" (printf "ghcr.io/cloudnative-pg/postgresql:%s" $state.postgresql.version)
+          "bootstrap" (dict "initdb" $initdb)
+          "storage" (dict
+            "size" $state.storage.size
+          )
+          "monitoring" (dict
+            "enablePodMonitor" $state.monitoring.enabled
+          )
+        }}
+        {{- if $state.superuser.enabled }}
+          {{- $_ := set $clusterSpec "superuserSecret" (dict "name" $state.superuser.secretName) }}
+        {{- end }}
+        {{- if $state.storage.class }}
+          {{- $_ := set $clusterSpec.storage "storageClass" $state.storage.class }}
+        {{- end }}
+        {{- if $state.postgresql.parameters }}
+          {{- $_ := set $clusterSpec "postgresql" (dict "parameters" $state.postgresql.parameters) }}
+        {{- end }}
+        {{- if $state.scaleToZero.enabled }}
+          {{- $_ := set $clusterSpec "plugins" (list (dict
+            "name" "cnpg-i-scale-to-zero.xata.io"
+            "enabled" true
+          )) }}
+        {{- end }}
+        {{- if $state.ha.enabled }}
+          {{- $affinity := dict
+            "enablePodAntiAffinity" true
+            "podAntiAffinityType" "preferred"
+          }}
+          {{- if $state.ha.topologySpreadByZone }}
+            {{- $_ := set $affinity "topologyKey" "topology.kubernetes.io/zone" }}
+          {{- end }}
+          {{- $_ := set $clusterSpec "affinity" $affinity }}
+        {{- end }}
+        {{- $mergedClusterSpec := mergeOverwrite $clusterSpec ($cnpg.values | default dict) }}
+        {{- toYaml $mergedClusterSpec | nindent 8 }}
+      {{- end }}
+  providerConfigRef:
+    name: {{ $state.kubernetesProviderConfigRef.name }}
+    kind: {{ $state.kubernetesProviderConfigRef.kind }}

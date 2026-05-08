@@ -1,3 +1,5 @@
+# Standard: production posture with HA + atlas tuning + team labels.
+#
 apiVersion: hops.ops.com.ai/v1alpha1
 kind: PSQLStack
 metadata:
@@ -5,13 +7,15 @@ metadata:
   namespace: default
 spec:
   clusterName: production-cluster
-  namespace: stackgres
+  namespace: cnpg-system
   labels:
     team: platform
-  stackgresOperator:
-    values:
-      deploy:
-        restapi: true
+  ha:
+    enabled: true                # 3 replicas + topology spread by zone on
+    replicas: 3                  # all platform components (CNPG, Atlas,
+    topologySpreadByZone: true   # S2Z plugin Deployment).
+  scaleToZeroPlugin:
+    enabled: true
   atlasOperator:
     values:
       prewarmDevDB: true

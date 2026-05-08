@@ -1,0 +1,35 @@
+# Standard production posture: HA across zones, scaleToZero opted in for
+# off-hours savings, custom postgres tuning, team labels.
+#
+# Note: when both ha.enabled and scaleToZero.enabled are true, the cluster
+# won't actually scale to zero (HA implies always-available); a warning
+# Condition flags this on the XR status. The annotation is still rendered
+# for tooling that reads it.
+#
+apiVersion: hops.ops.com.ai/v1alpha1
+kind: PSQLCluster
+metadata:
+  name: orders
+  namespace: orders
+spec:
+  clusterName: production-cluster
+  labels:
+    team: payments
+  instances: 3
+  storage:
+    size: 100Gi
+  postgresql:
+    version: "17"
+    parameters:
+      shared_buffers: "1GB"
+      effective_cache_size: "3GB"
+  ha:
+    enabled: true
+    replicas: 3
+    topologySpreadByZone: true
+  scaleToZero:
+    enabled: false
+  branching:
+    enabled: true
+  monitoring:
+    enabled: true

@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   validate:
-    uses: unbounded-tech/workflows-crossplane/.github/workflows/validate.yaml@feat/multi-api-support
+    uses: hops-ops/workflows-crossplane/.github/workflows/validate.yaml@v3.0.0
     with:
       examples: |
         [
@@ -36,14 +36,41 @@ jobs:
       error_on_missing_schemas: true
 
   test:
-    uses: unbounded-tech/workflows-crossplane/.github/workflows/test.yaml@feat/multi-api-support
+    uses: hops-ops/workflows-crossplane/.github/workflows/test.yaml@v3.0.0
 
   e2e:
-    uses: unbounded-tech/workflows-crossplane/.github/workflows/e2e.yaml@feat/multi-api-support
+    uses: hops-ops/workflows-crossplane/.github/workflows/e2e.yaml@v3.0.0
     with:
-      # See on-pr.yaml — 90 min for the full Ready chain.
+      aws: true
+      aws-use-oidc: true
+      aws-account-id: "034489662075"
+      aws-region: us-east-2
+      aws-role-duration-seconds: 7200
+      write-env-files: true
+      env-vars: |
+        {
+          "ADMIN_ROLE_ARN": "${{ vars.ADMIN_ROLE_ARN }}",
+          "PRIVATE_SUBNET_ID_A": "${{ vars.PRIVATE_SUBNET_ID_A }}",
+          "PRIVATE_SUBNET_ID_B": "${{ vars.PRIVATE_SUBNET_ID_B }}"
+        }
+      debug-resource-types: |
+        [
+          "psqlstacks.hops.ops.com.ai",
+          "psqlclusters.hops.ops.com.ai",
+          "psqlbranches.hops.ops.com.ai",
+          "volumesnapshotstacks.hops.ops.com.ai",
+          "certstacks.hops.ops.com.ai",
+          "autoeksclusters.aws.hops.ops.com.ai"
+        ]
+      delete-extra-resources: |
+        [
+          "volumesnapshotstacks.hops.ops.com.ai",
+          "certstacks.hops.ops.com.ai",
+          "autoeksclusters.aws.hops.ops.com.ai"
+        ]
       timeout-minutes: 90
       cleanup-timeout-minutes: 30
+      delete-extra-resources-timeout-minutes: 30
 
   version-and-tag:
     name: Version and Tag

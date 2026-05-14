@@ -37,6 +37,17 @@ spec:
               clusterName:
                 description: Name of the target cluster. Used as default for kubernetesProviderConfigRef.name and label values.
                 type: string
+              targetNamespace:
+                description: |
+                  Namespace on the target cluster where the composed CNPG
+                  Cluster and its app/superuser Secrets land. Defaults to the
+                  PSQLCluster XR's own namespace (which is the control-plane
+                  namespace). Override when the XR lives in the platform's
+                  default control-plane namespace but the data plane should
+                  go elsewhere — e.g. the AuthStack install ns so Zitadel
+                  pods can read the app Secret via env-var secretKeyRef
+                  without cross-namespace mirroring.
+                type: string
               labels:
                 description: Custom labels merged with stack defaults; applied to every composed resource.
                 type: object

@@ -11,7 +11,12 @@
 # Core defaults
 # ==============================================================================
 {{- $name := $metadata.name }}
-{{- $namespace := $metadata.namespace | default "default" }}
+# The XR's own namespace is the control-plane (Crossplane) ns. The CNPG
+# Cluster + its Secrets target `targetNamespace` (which defaults to the
+# XR's ns for the common case where control plane and data plane share
+# a namespace).
+{{- $controlPlaneNamespace := $metadata.namespace | default "default" }}
+{{- $namespace := $spec.targetNamespace | default $controlPlaneNamespace }}
 {{- $clusterName := $spec.clusterName }}
 {{- $managementPolicies := $spec.managementPolicies | default (list "*") }}
 

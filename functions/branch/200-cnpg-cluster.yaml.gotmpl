@@ -60,6 +60,9 @@ spec:
         {{- toYaml $cnpg.overrideAllValues | nindent 8 }}
       {{- else }}
       spec:
+        {{- /* CNPG postgres container resources. Memory request==limit so the
+               buffer cache has a predictable ceiling. No CPU limit — query
+               workloads burst. Override via spec.cnpg.values.resources. */}}
         {{- $clusterSpec := dict
           "instances" $state.branch.instances
           "bootstrap" (dict
@@ -72,6 +75,10 @@ spec:
                 )
               )
             )
+          )
+          "resources" (dict
+            "requests" (dict "cpu" "100m" "memory" "512Mi")
+            "limits" (dict "memory" "512Mi")
           )
         }}
         {{- /* imageName only set when version is explicit. Empty = let CNPG

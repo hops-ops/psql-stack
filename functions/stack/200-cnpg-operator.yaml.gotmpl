@@ -35,7 +35,12 @@ spec:
     {{- else }}
     {{- /* Chart defaults — Auto Mode handles scheduling, no nodeSelector/
            tolerations injected. */}}
-    {{- $chartDefaults := dict }}
+    {{- $chartDefaults := dict
+      "resources" (dict
+        "requests" (dict "cpu" "23m" "memory" "138Mi")
+        "limits" (dict "cpu" "200m" "memory" "512Mi")
+      )
+    }}
     {{- if $state.ha.enabled }}
       {{- $_ := set $chartDefaults "replicaCount" $state.ha.replicas }}
       {{- if $state.ha.topologySpreadByZone }}

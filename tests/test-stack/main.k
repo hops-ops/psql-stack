@@ -31,11 +31,13 @@ _items = [
                     apiVersion = "helm.m.crossplane.io/v1beta1"
                     kind = "Release"
                     metadata.name = "cloudnative-pg"
+                    spec.forProvider.values.resources.requests = {cpu = "23m", memory = "138Mi"}
                 }
                 {
                     apiVersion = "helm.m.crossplane.io/v1beta1"
                     kind = "Release"
                     metadata.name = "atlas-operator"
+                    spec.forProvider.values.resources.requests = {cpu = "15m", memory = "100Mi"}
                 }
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -51,6 +53,15 @@ _items = [
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                     kind = "Object"
                     metadata.name = "test-psql-s2z-deployment"
+                    spec.forProvider.manifest.spec.template.spec.containers = [
+                        {
+                            name = "cnpg-i-scale-to-zero"
+                            resources = {
+                                requests = {cpu = "15m", memory = "100Mi"}
+                                limits = {cpu = "100m", memory = "256Mi"}
+                            }
+                        }
+                    ]
                 }
             ]
         }

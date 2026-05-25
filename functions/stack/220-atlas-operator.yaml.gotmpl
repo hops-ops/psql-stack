@@ -30,6 +30,10 @@ spec:
     {{- else }}
     {{- $chartDefaults := dict
       "prewarmDevDB" true
+      "resources" (dict
+        "requests" (dict "cpu" "15m" "memory" "100Mi")
+        "limits" (dict "cpu" "100m" "memory" "256Mi")
+      )
     }}
     {{- if $state.ha.enabled }}
       {{- $_ := set $chartDefaults "replicaCount" $state.ha.replicas }}

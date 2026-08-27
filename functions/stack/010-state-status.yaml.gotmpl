@@ -35,8 +35,16 @@
 ) }}
 
 # ==============================================================================
-# Compute status (readiness determined by function-auto-ready)
+# Compute status. Disabled optional components are already in their desired
+# state and must not keep the aggregate readiness false.
 # ==============================================================================
+{{- $ready := and
+  $state.observed.cnpg.ready
+  $state.observed.atlasOperator.ready
+  (or (not $state.scaleToZeroPlugin.enabled) $state.observed.scaleToZeroPlugin.ready)
+  (or (not $state.storageClass.enabled) $state.observed.storageClass.ready)
+  (or (not $state.snapshotClass.enabled) $state.observed.snapshotClass.ready)
+}}
 {{- $state = set $state "status" (dict
-  "ready" false
+  "ready" $ready
 ) }}

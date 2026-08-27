@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   validate:
-    uses: hops-ops/workflows-crossplane/.github/workflows/validate.yaml@v3.0.0
+    uses: hops-ops/workflows-crossplane/.github/workflows/validate.yaml@v3.2.0
     with:
       examples: |
         [
@@ -36,10 +36,10 @@ jobs:
       error_on_missing_schemas: true
 
   test:
-    uses: hops-ops/workflows-crossplane/.github/workflows/test.yaml@v3.0.0
+    uses: hops-ops/workflows-crossplane/.github/workflows/test.yaml@v3.2.0
 
   e2e:
-    uses: hops-ops/workflows-crossplane/.github/workflows/e2e.yaml@v3.0.0
+    uses: hops-ops/workflows-crossplane/.github/workflows/e2e.yaml@v3.2.0
     with:
       aws: true
       aws-use-oidc: true

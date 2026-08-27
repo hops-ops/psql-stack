@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   publish:
-    uses: hops-ops/workflows-crossplane/.github/workflows/publish.yaml@v3.0.0
+    uses: hops-ops/workflows-crossplane/.github/workflows/publish.yaml@v3.2.0
     secrets: inherit
     with:
       tag: ${{ github.ref_name }}

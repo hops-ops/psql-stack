@@ -27,7 +27,7 @@ permissions:
 
 jobs:
   validate:
-    uses: hops-ops/workflows-crossplane/.github/workflows/validate.yaml@v3.0.0
+    uses: hops-ops/workflows-crossplane/.github/workflows/validate.yaml@v3.2.0
     with:
       examples: |
         [
@@ -40,10 +40,10 @@ jobs:
       error_on_missing_schemas: true
 
   test:
-    uses: hops-ops/workflows-crossplane/.github/workflows/test.yaml@v3.0.0
+    uses: hops-ops/workflows-crossplane/.github/workflows/test.yaml@v3.2.0
 
   e2e:
-    uses: hops-ops/workflows-crossplane/.github/workflows/e2e.yaml@v3.0.0
+    uses: hops-ops/workflows-crossplane/.github/workflows/e2e.yaml@v3.2.0
     with:
       # E2E provisions a real EKS Auto Mode cluster (mirror of aws-observe-stack)
       # so the `psql` StorageClass + VolumeSnapshotClass land on a real
@@ -92,7 +92,7 @@ jobs:
       - validate
       - test
       - e2e
-    uses: hops-ops/workflows-crossplane/.github/workflows/publish.yaml@v3.0.0
+    uses: hops-ops/workflows-crossplane/.github/workflows/publish.yaml@v3.2.0
     secrets: inherit
     with:
       tag: pr-${{ github.event.pull_request.number }}-${{ github.sha }}

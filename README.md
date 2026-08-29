@@ -188,9 +188,9 @@ spec:
 
 | Kind | Package | Version |
 |---|---|---|
-| Function | `crossplane-contrib/function-auto-ready` | `>=v0 <v1` |
-| Provider | `crossplane-contrib/provider-helm` | `>=v1 <v2` |
-| Provider | `crossplane-contrib/provider-kubernetes` | `>=v1 <v2` |
+| Function | `crossplane-contrib/function-auto-ready` | `^v0` |
+| Provider | `crossplane-contrib/provider-helm` | `^v1` |
+| Provider | `crossplane-contrib/provider-kubernetes` | `^v1` |
 
 ## Development
 

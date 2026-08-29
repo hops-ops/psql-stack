@@ -77,13 +77,13 @@
         "upbound.yaml"
       ],
       "matchStrings": [
-        "\\s*(configuration|function|package|provider):\\s*ghcr\\.io/hops-ops/(?<depName>.*?)\\s*version:\\s*(\"|')>=v?[0-9]+(?:\\.[0-9]+){0,2}(?:\\s*<v?[0-9]+(?:\\.[0-9]+){0,2})?(\"|')\\s*",
-        "(?<currentValue>>=v?[0-9]+(?:\\.[0-9]+){0,2}(?:\\s*<v?[0-9]+(?:\\.[0-9]+){0,2})?)"
+        "\\s*(configuration|function|package|provider):\\s*ghcr\\.io/hops-ops/(?<depName>.*?)\\s*version:\\s*(\"|')\\^v?[0-9]+(\"|')\\s*",
+        "(?<currentValue>\\^v?[0-9]+)"
       ],
       "datasourceTemplate": "github-releases",
       "versioningTemplate": "npm",
       "packageNameTemplate": "hops-ops/{{depName}}",
-      "autoReplaceStringTemplate": ">=v{{{newMajor}}} <v{{add newMajor 1}}"
+      "autoReplaceStringTemplate": "^v{{{newMajor}}}"
     },
     {
       "customType": "regex",
@@ -94,15 +94,15 @@
         "upbound.yaml"
       ],
       "matchStrings": [
-        "\\s*(configuration|function|package|provider):\\s*(?<registryUrl>xpkg\\.[^/]+)\\/(?<orgName>[^/]+)\\/(?<repoName>[^/\\s]+)\\s*version:\\s*(\"|')>=v?[0-9]+(?:\\.[0-9]+){0,2}(?:\\s*<v?[0-9]+(?:\\.[0-9]+){0,2})?(\"|')\\s*",
-        "(?<currentValue>>=v?[0-9]+(?:\\.[0-9]+){0,2}(?:\\s*<v?[0-9]+(?:\\.[0-9]+){0,2})?)"
+        "\\s*(configuration|function|package|provider):\\s*(?<registryUrl>xpkg\\.[^/]+)\\/(?<orgName>[^/]+)\\/(?<repoName>[^/\\s]+)\\s*version:\\s*(\"|')\\^v?[0-9]+(\"|')\\s*",
+        "(?<currentValue>\\^v?[0-9]+)"
       ],
       "datasourceTemplate": "docker",
       "versioningTemplate": "npm",
       "registryUrlTemplate": "https://{{registryUrl}}",
       "depNameTemplate": "{{orgName}}/{{repoName}}",
       "packageNameTemplate": "{{orgName}}/{{repoName}}",
-      "autoReplaceStringTemplate": ">=v{{{newMajor}}} <v{{add newMajor 1}}"
+      "autoReplaceStringTemplate": "^v{{{newMajor}}}"
     },
     {
       "customType": "regex",

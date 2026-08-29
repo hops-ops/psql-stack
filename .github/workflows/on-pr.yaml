@@ -10,7 +10,7 @@ on:
       - reopened
       - synchronize
     paths:
-      - ".github/workflows/on-pr.yaml"
+      - ".github/workflows/**"
       - ".gitops/**"
       - "apis/**"
       - "examples/**"

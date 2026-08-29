@@ -22,6 +22,7 @@ spec:
     chart:
       name: atlas-operator
       repository: oci://ghcr.io/ariga/charts
+      # renovate: datasource=docker depName=ariga/charts/atlas-operator registryUrl=https://ghcr.io
       version: 0.7.23
     namespace: {{ $atlas.namespace }}
     {{- if $atlas.overrideAllValues }}

@@ -217,6 +217,7 @@ _items = [
                     clusterName = "my-cluster"
                     storage = {size = "5Gi"}
                     postgresql = {
+                        # renovate: datasource=docker depName=library/postgres registryUrl=https://index.docker.io
                         version = "17"
                         parameters = {
                             shared_buffers = "256MB"

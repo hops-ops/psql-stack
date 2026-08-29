@@ -75,8 +75,10 @@
 # Postgres
 # ==============================================================================
 {{- $pgSpec := $spec.postgresql | default dict }}
+# renovate: datasource=docker depName=library/postgres registryUrl=https://index.docker.io
+{{- $postgresVersion := $pgSpec.version | default "17" }}
 {{- $postgresql := dict
-  "version" ($pgSpec.version | default "17")
+  "version" $postgresVersion
   "parameters" ($pgSpec.parameters | default dict)
 }}
 

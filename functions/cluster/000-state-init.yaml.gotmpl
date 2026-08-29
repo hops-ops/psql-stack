@@ -75,7 +75,7 @@
 # Postgres
 # ==============================================================================
 {{- $pgSpec := $spec.postgresql | default dict }}
-# renovate: datasource=docker depName=library/postgres registryUrl=https://index.docker.io
+# renovate: datasource=docker depName=cloudnative-pg/postgresql registryUrl=https://ghcr.io
 {{- $postgresVersion := $pgSpec.version | default "17" }}
 {{- $postgresql := dict
   "version" $postgresVersion

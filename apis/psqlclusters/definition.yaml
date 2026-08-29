@@ -104,7 +104,7 @@ spec:
                   version:
                     description: Postgres major version. Defaults to "17".
                     type: string
-                    # renovate: datasource=docker depName=library/postgres registryUrl=https://index.docker.io
+                    # renovate: datasource=docker depName=cloudnative-pg/postgresql registryUrl=https://ghcr.io
                     default: "17"
                   parameters:
                     description: postgres.conf parameters (e.g. `shared_buffers`, `max_connections`).

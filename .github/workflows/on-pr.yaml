@@ -10,6 +10,7 @@ on:
       - reopened
       - synchronize
     paths:
+      - 'renovate.json'
       - ".github/workflows/**"
       - ".gitops/**"
       - "apis/**"

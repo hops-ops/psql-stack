@@ -87,14 +87,14 @@
     },
     {
       "customType": "regex",
-      "description": "Crossplane packages from other registries (tracked via Docker tags)",
+      "description": "Crossplane packages from xpkg registries (tracked via Docker tags)",
       "matchStringsStrategy": "recursive",
       "managerFilePatterns": [
         "apis/**/configuration.yaml",
         "upbound.yaml"
       ],
       "matchStrings": [
-        "\\s*(configuration|function|package|provider):\\s*(?<registryUrl>[^/]+)\\/(?<orgName>[^/]+)\\/(?<repoName>[^/\\s]+)\\s*version:\\s*(\"|')>=v?[0-9]+(?:\\.[0-9]+){0,2}(?:\\s*<v?[0-9]+(?:\\.[0-9]+){0,2})?(\"|')\\s*",
+        "\\s*(configuration|function|package|provider):\\s*(?<registryUrl>xpkg\\.[^/]+)\\/(?<orgName>[^/]+)\\/(?<repoName>[^/\\s]+)\\s*version:\\s*(\"|')>=v?[0-9]+(?:\\.[0-9]+){0,2}(?:\\s*<v?[0-9]+(?:\\.[0-9]+){0,2})?(\"|')\\s*",
         "(?<currentValue>>=v?[0-9]+(?:\\.[0-9]+){0,2}(?:\\s*<v?[0-9]+(?:\\.[0-9]+){0,2})?)"
       ],
       "datasourceTemplate": "docker",
@@ -115,7 +115,7 @@
       ],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: registryUrl=(?<registryUrl>\\S+))?\\s+[^\\n]*?(?:default\\s+|:=\\s*|[\"']?(?:version|chartVersion|tag|default)[\"']?\\s*(?:[=:]\\s*|\\s+))[\"']?(?<currentValue>v?[0-9][^\\s\"'}]*)",
-        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: registryUrl=(?<registryUrl>\\S+))?\\s+[^\\n]*?(?:default\\s+|[\"']?image[\"']?\\s*[=:]\\s*)[\"']?[A-Za-z0-9._/-]+:(?<currentValue>v?[A-Za-z0-9][^\\s\"'}]*)",
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: registryUrl=(?<registryUrl>\\S+))?\\s+[^\\n]*?[\"']?image[\"']?\\s*[=:]\\s*[\"']?[A-Za-z0-9._/-]+:(?<currentValue>v?[A-Za-z0-9][^\\s\"'}]*)",
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: registryUrl=(?<registryUrl>\\S+))?\\s+[^\\n]*?package\\s*=\\s*\"[^\"]+:(?<currentValue>[^\"]+)\""
       ]
     },

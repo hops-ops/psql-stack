@@ -12,9 +12,19 @@
   },
   "packageRules": [
     {
-      "description": "Automerge minor and patch updates that pass all checks",
-      "matchUpdateTypes": ["minor", "patch"],
+      "description": "Automerge minor and patch updates after all checks pass",
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
       "automerge": true
+    },
+    {
+      "description": "Require manual review for major updates",
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "automerge": false
     },
     {
       "description": "Disable automatic updates for all hops-ops Docker images",
@@ -25,6 +35,14 @@
       "matchPackageNames": [
         "/^hops-ops//"
       ]
+    },
+    {
+      "description": "Group AWS provider-family packages",
+      "matchPackageNames": [
+        "/provider-family-aws/",
+        "/provider-aws-.*/"
+      ],
+      "groupName": "aws-providers"
     },
     {
       "description": "Use feat(deps): commit prefix for hops-ops Crossplane packages (github-releases datasource)",
@@ -53,15 +71,53 @@
     {
       "customType": "regex",
       "description": "hops-ops Crossplane configurations (tracked via GitHub Releases)",
+      "matchStringsStrategy": "recursive",
       "managerFilePatterns": [
         "apis/**/configuration.yaml",
         "upbound.yaml"
       ],
       "matchStrings": [
-        "\\s*(configuration|function|package|provider):\\s*ghcr\\.io/hops-ops/(?<depName>.*?)\\s*version:\\s*(\"|')>=(?<currentValue>.*?)(\"|')\\s*"
+        "\\s*(configuration|function|package|provider):\\s*ghcr\\.io/hops-ops/(?<depName>.*?)\\s*version:\\s*(\"|')\\^v?[0-9]+(\"|')\\s*",
+        "(?<currentValue>\\^v?[0-9]+)"
       ],
       "datasourceTemplate": "github-releases",
-      "packageNameTemplate": "hops-ops/{{depName}}"
+      "versioningTemplate": "npm",
+      "packageNameTemplate": "hops-ops/{{depName}}",
+      "autoReplaceStringTemplate": "^v{{{newMajor}}}"
+    },
+    {
+      "customType": "regex",
+      "description": "Crossplane packages from xpkg registries (tracked via Docker tags)",
+      "matchStringsStrategy": "recursive",
+      "managerFilePatterns": [
+        "apis/**/configuration.yaml",
+        "upbound.yaml"
+      ],
+      "matchStrings": [
+        "\\s*(configuration|function|package|provider):\\s*(?<registryUrl>xpkg\\.[^/]+)\\/(?<orgName>[^/]+)\\/(?<repoName>[^/\\s]+)\\s*version:\\s*(\"|')\\^v?[0-9]+(\"|')\\s*",
+        "(?<currentValue>\\^v?[0-9]+)"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "npm",
+      "registryUrlTemplate": "https://{{registryUrl}}",
+      "depNameTemplate": "{{orgName}}/{{repoName}}",
+      "packageNameTemplate": "{{orgName}}/{{repoName}}",
+      "autoReplaceStringTemplate": "^v{{{newMajor}}}"
+    },
+    {
+      "customType": "regex",
+      "description": "Annotated runtime dependencies in schemas, templates, examples, and tests",
+      "managerFilePatterns": [
+        "apis/**/*.yaml",
+        "examples/**/*.yaml",
+        "functions/**/*.yaml.gotmpl",
+        "tests/**/*.k"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: registryUrl=(?<registryUrl>\\S+))?\\s+[^\\n]*?(?:default\\s+|:=\\s*|[\"']?(?:version|chartVersion|tag|default)[\"']?\\s*(?:[=:]\\s*|\\s+))[\"']?(?<currentValue>v?[0-9][^\\s\"'}]*)",
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: registryUrl=(?<registryUrl>\\S+))?\\s+[^\\n]*?(?:default\\s*:\\s*|[\"']?image[\"']?\\s*[=:]\\s*)[\"']?[A-Za-z0-9._/-]+:(?<currentValue>v?[A-Za-z0-9][^\\s\"'}]*)",
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: registryUrl=(?<registryUrl>\\S+))?\\s+[^\\n]*?package\\s*=\\s*\"xpkg\\.[^/]+/[^\"]+:(?<currentValue>[^\"]+)\""
+      ]
     },
     {
       "customType": "regex",
@@ -74,21 +130,18 @@
       ],
       "datasourceTemplate": "github-releases",
       "packageNameTemplate": "{{depName}}"
-    },
-    {
-      "customType": "regex",
-      "description": "Crossplane packages from other registries (tracked via Docker tags)",
-      "managerFilePatterns": [
-        "apis/**/configuration.yaml",
-        "upbound.yaml"
-      ],
-      "matchStrings": [
-        "\\s*(configuration|function|package|provider):\\s*(?<registryUrl>[^/]+)\\/(?<orgName>[^/]+)\\/(?<repoName>[^/\\s]+)\\s*version:\\s*(\"|')>=(?<currentValue>.*?)(\"|')\\s*"
-      ],
-      "datasourceTemplate": "docker",
-      "registryUrlTemplate": "https://{{registryUrl}}",
-      "depNameTemplate": "{{orgName}}/{{repoName}}",
-      "packageNameTemplate": "{{orgName}}/{{repoName}}"
     }
-  ]
+  ],
+  "ignorePaths": [
+    "**/node_modules/**",
+    "**/bower_components/**",
+    "**/vendor/**",
+    "**/__tests__/**",
+    "**/test/**",
+    "**/__fixtures__/**",
+    "**/fixtures/**"
+  ],
+  "automergeType": "pr",
+  "platformAutomerge": false,
+  "ignoreTests": false
 }

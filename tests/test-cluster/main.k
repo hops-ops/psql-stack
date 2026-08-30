@@ -217,6 +217,7 @@ _items = [
                     clusterName = "my-cluster"
                     storage = {size = "5Gi"}
                     postgresql = {
+                        # renovate: datasource=docker depName=cloudnative-pg/postgresql registryUrl=https://ghcr.io
                         version = "17"
                         parameters = {
                             shared_buffers = "256MB"

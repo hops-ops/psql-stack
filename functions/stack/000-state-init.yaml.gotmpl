@@ -110,6 +110,10 @@
   "deletionPolicy" ($snapshotSpec.deletionPolicy | default "Delete")
   "parameters" ($snapshotSpec.parameters | default dict)
 }}
+# renovate: datasource=helm depName=cloudnative-pg registryUrl=https://cloudnative-pg.github.io/charts
+{{- $cnpgChartVersion := $cnpg.chartVersion | default "0.27.1" }}
+# renovate: datasource=docker depName=xataio/cnpg-i-scale-to-zero registryUrl=https://ghcr.io
+{{- $scaleToZeroVersion := $s2z.version | default "v0.1.7" }}
 
 # ==============================================================================
 # Initialize $state
@@ -126,13 +130,13 @@
   "cnpg" (dict
     "name" ($cnpg.name | default "cloudnative-pg")
     "namespace" ($cnpg.namespace | default $namespace)
-    "chartVersion" ($cnpg.chartVersion | default "0.27.1")
+    "chartVersion" $cnpgChartVersion
     "values" ($cnpg.values | default dict)
     "overrideAllValues" ($cnpg.overrideAllValues | default dict)
   )
   "scaleToZeroPlugin" (dict
     "enabled" $s2zEnabled
-    "version" ($s2z.version | default "v0.1.7")
+    "version" $scaleToZeroVersion
     "namespace" ($s2z.namespace | default $namespace)
   )
   "atlasOperator" (dict

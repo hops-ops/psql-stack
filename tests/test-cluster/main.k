@@ -218,7 +218,7 @@ _items = [
                     storage = {size = "5Gi"}
                     postgresql = {
                         # renovate: datasource=docker depName=cloudnative-pg/postgresql registryUrl=https://ghcr.io
-                        version = "17"
+                        version = "18"
                         parameters = {
                             shared_buffers = "256MB"
                             max_connections = "200"

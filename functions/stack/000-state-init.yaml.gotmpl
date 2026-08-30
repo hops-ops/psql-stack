@@ -111,7 +111,7 @@
   "parameters" ($snapshotSpec.parameters | default dict)
 }}
 # renovate: datasource=helm depName=cloudnative-pg registryUrl=https://cloudnative-pg.github.io/charts
-{{- $cnpgChartVersion := $cnpg.chartVersion | default "0.27.1" }}
+{{- $cnpgChartVersion := $cnpg.chartVersion | default "0.29.0" }}
 # renovate: datasource=docker depName=xataio/cnpg-i-scale-to-zero registryUrl=https://ghcr.io
 {{- $scaleToZeroVersion := $s2z.version | default "v0.1.9" }}
 

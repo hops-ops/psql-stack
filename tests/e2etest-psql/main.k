@@ -86,7 +86,7 @@ _items = [
                     apiVersion = "pkg.crossplane.io/v1"
                     kind = "Configuration"
                     metadata.name = "hops-ops-volume-snapshot-stack"
-                    spec.package = "ghcr.io/hops-ops/volume-snapshot-stack:v0.1.0"
+                    spec.package = "ghcr.io/hops-ops/volume-snapshot-stack:v0.1.3"
                 }
                 # cert-stack — installs cert-manager onto the target cluster.
                 # PSQLStack's scaleToZeroPlugin uses cert-manager Issuer +

@@ -77,7 +77,7 @@ _items = [
                     apiVersion = "pkg.crossplane.io/v1"
                     kind = "Configuration"
                     metadata.name = "aws-auto-eks-cluster"
-                    spec.package = "ghcr.io/hops-ops/aws-auto-eks-cluster:v0.11.0"
+                    spec.package = "ghcr.io/hops-ops/aws-auto-eks-cluster:v2.2.1"
                 }
                 # volume-snapshot-stack — provides the VolumeSnapshotStack XRD
                 # (installs the cluster-wide snapshot-controller). PSQLBranch's

@@ -96,7 +96,7 @@ _items = [
                     apiVersion = "pkg.crossplane.io/v1"
                     kind = "Configuration"
                     metadata.name = "hops-ops-cert-stack"
-                    spec.package = "ghcr.io/hops-ops/cert-stack:v0.1.0"
+                    spec.package = "ghcr.io/hops-ops/cert-stack:v0.5.1"
                 }
             ]
 

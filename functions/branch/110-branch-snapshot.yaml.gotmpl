@@ -10,6 +10,12 @@
 #
 
 {{- $source := $state.source }}
+{{- $sourceContent := $state.observed.sourceSnapshotContent }}
+{{- $render := or
+  (not $state.crossNamespace)
+  (and (ne $sourceContent.handle "") (ne $sourceContent.driver ""))
+}}
+{{- if $render }}
 ---
 apiVersion: kubernetes.m.crossplane.io/v1alpha1
 kind: Object
@@ -20,6 +26,9 @@ metadata:
   labels: {{ $state.labels | toJson }}
 spec:
   managementPolicies: {{ $state.managementPolicies | toJson }}
+  readiness:
+    policy: DeriveFromCelQuery
+    celQuery: has(object.status) && has(object.status.readyToUse) && object.status.readyToUse == true
   forProvider:
     manifest:
       apiVersion: snapshot.storage.k8s.io/v1
@@ -32,10 +41,9 @@ spec:
         volumeSnapshotClassName: {{ $source.snapshotClassName }}
         source:
           {{- if $state.crossNamespace }}
-          # Cross-ns branching — bind to the VolumeSnapshotContent created from
-          # the source-ns VolumeSnapshot. The content name is observed on the
-          # source-ns Object's status; static binding works once that exists.
-          volumeSnapshotContentName: {{ $state.observed.snapshotContent | quote }}
+          # Cross-ns branching — bind to the distinct, branch-owned static
+          # VolumeSnapshotContent that imports the source snapshotHandle.
+          volumeSnapshotContentName: {{ $state.branchSnapshotContentName | quote }}
           {{- else }}
           # Same-ns branching — reference the source PVC directly.
           persistentVolumeClaimName: {{ $source.pvcName }}
@@ -43,3 +51,27 @@ spec:
   providerConfigRef:
     name: {{ $state.kubernetesProviderConfigRef.name }}
     kind: {{ $state.kubernetesProviderConfigRef.kind }}
+{{- end }}
+
+{{- if and $state.observed.branchSnapshot.ready $state.observed.cluster.objectReady }}
+---
+apiVersion: protection.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  name: {{ $state.name }}-delete-cnpg-cluster-before-branch-snapshot
+  annotations:
+    {{ setResourceNameAnnotation "usage-cnpg-cluster-branch-snapshot" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  replayDeletion: true
+  of:
+    apiVersion: kubernetes.m.crossplane.io/v1alpha1
+    kind: Object
+    resourceRef:
+      name: {{ $state.name }}-branch-snapshot
+  by:
+    apiVersion: kubernetes.m.crossplane.io/v1alpha1
+    kind: Object
+    resourceRef:
+      name: {{ $state.name }}-cnpg-cluster
+{{- end }}

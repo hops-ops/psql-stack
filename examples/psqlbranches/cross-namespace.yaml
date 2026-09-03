@@ -1,10 +1,10 @@
 # Cross-namespace branch — preview branch in `preview-pr-142` namespace
 # forking a source PSQLCluster in `team-app` namespace.
 #
-# Composition: 1 VolumeSnapshot in `team-app` (of source PVC) + 1 bridging
-# VolumeSnapshot in `preview-pr-142` (bound to the same VolumeSnapshotContent)
-# + 1 CNPG Cluster in `preview-pr-142` (bootstrapped from the branch-ns
-# VolumeSnapshot).
+# Composition: 1 VolumeSnapshot in `team-app` (of source PVC), a distinct
+# static VolumeSnapshotContent importing the source CSI snapshot handle,
+# 1 VolumeSnapshot in `preview-pr-142` bound to that imported content, and
+# 1 CNPG Cluster bootstrapped from the branch-namespace VolumeSnapshot.
 #
 apiVersion: hops.ops.com.ai/v1alpha1
 kind: PSQLBranch
@@ -16,3 +16,12 @@ spec:
   source:
     name: my-app
     namespace: team-app          # cross-namespace: branch ns differs from source ns
+    storage:
+      size: 10Gi                 # mirror the source PVC size
+  postgresql:
+    version: "17"                # must match the source major version
+  app:
+    role: app
+    database: app                # CNPG creates pr-142-app and resets this role
+  superuser:
+    enabled: true                # CNPG creates pr-142-superuser in the branch ns

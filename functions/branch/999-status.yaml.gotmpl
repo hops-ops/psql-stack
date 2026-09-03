@@ -12,3 +12,12 @@ status:
   bootstrapPhase: {{ $state.status.bootstrapPhase | quote }}
   bootstrapMethod: {{ $state.status.bootstrapMethod | quote }}
   sourceSnapshotContent: {{ $state.status.sourceSnapshotContent | quote }}
+  app:
+    secretName: {{ $state.app.secretName | quote }}
+    database: {{ $state.app.database | quote }}
+    host: {{ printf "%s-rw.%s.svc.cluster.local" $state.name $state.namespace | quote }}
+    port: 5432
+  {{- if $state.superuser.enabled }}
+  superuser:
+    secretName: {{ $state.superuser.secretName | quote }}
+  {{- end }}

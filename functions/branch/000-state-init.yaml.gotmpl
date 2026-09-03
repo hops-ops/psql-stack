@@ -56,6 +56,7 @@
 # Cross-namespace bridging gate — render the source-ns VolumeSnapshot only when
 # the source is in a different namespace from the branch.
 {{- $crossNamespace := ne $sourceNamespace $namespace }}
+{{- $branchSnapshotContentName := printf "%s-%s-content" $namespace $name }}
 
 # ==============================================================================
 # Branch sizing
@@ -71,6 +72,35 @@
     "size" ($branchStorageSpec.size | default "")
     "class" ($branchStorageSpec.class | default "psql")
   )
+}}
+
+# ==============================================================================
+# Recovery credentials
+# ==============================================================================
+{{- $appSpec := $spec.app | default dict }}
+{{- $appSecretName := $appSpec.secretName | default "" }}
+{{- $appCnpgManagedSecret := not $appSecretName }}
+{{- if $appCnpgManagedSecret }}
+  {{- $appSecretName = printf "%s-app" $name }}
+{{- end }}
+{{- $app := dict
+  "role" ($appSpec.role | default "app")
+  "database" ($appSpec.database | default "app")
+  "secretName" $appSecretName
+  "cnpgManagedSecret" $appCnpgManagedSecret
+}}
+
+{{- $superuserSpec := $spec.superuser | default dict }}
+{{- $superuserEnabled := false }}
+{{- if hasKey $superuserSpec "enabled" }}
+  {{- $superuserEnabled = $superuserSpec.enabled }}
+{{- end }}
+{{- $superuserProvidedSecretName := $superuserSpec.secretName | default "" }}
+{{- $superuserSecretName := $superuserProvidedSecretName | default (printf "%s-superuser" $name) }}
+{{- $superuser := dict
+  "enabled" $superuserEnabled
+  "secretName" $superuserSecretName
+  "providedSecretName" $superuserProvidedSecretName
 }}
 
 # ==============================================================================
@@ -127,7 +157,10 @@
   "kubernetesProviderConfigRef" $k8sProviderConfigRef
   "source" $source
   "crossNamespace" $crossNamespace
+  "branchSnapshotContentName" $branchSnapshotContentName
   "branch" $branch
+  "app" $app
+  "superuser" $superuser
   "postgresql" $postgresql
   "scaleToZero" $scaleToZero
   "ttl" $ttl

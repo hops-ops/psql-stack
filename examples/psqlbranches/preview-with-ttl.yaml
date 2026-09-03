@@ -14,6 +14,15 @@ spec:
   source:
     name: orders
     namespace: payments
+    storage:
+      size: 100Gi                # must be at least the source PVC size
+  postgresql:
+    version: "17"                # must match the source major version
+  app:
+    role: orders_app
+    database: orders
+  superuser:
+    enabled: true                # branch-local secret for preview migrations
   scaleToZero:
     enabled: true
     idleTimeout: 5m              # very aggressive — preview envs hibernate quickly

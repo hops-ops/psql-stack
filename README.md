@@ -94,6 +94,20 @@ spec:
 
 If the cluster already ships a suitable default StorageClass, disable composition and have PSQLCluster/PSQLBranch consumers set `spec.storage.class` explicitly.
 
+### Preview branch credentials
+
+Snapshot recovery restores PostgreSQL data and roles, but not Kubernetes
+Secrets. `PSQLBranch` therefore defaults to CloudNativePG-managed,
+branch-local credentials: it creates `<branch-name>-app` for `spec.app.role`
+and resets that recovered role's password. Set `spec.app.secretName` only when
+the destination namespace already contains a compatible basic-auth Secret.
+
+For migration jobs that need the `postgres` role, set
+`spec.superuser.enabled: true`. CloudNativePG then creates
+`<branch-name>-superuser`; `spec.superuser.secretName` selects a pre-existing
+Secret instead. Connection Secret names and the branch service endpoint are
+reported in `status.app` and `status.superuser`.
+
 ```yaml
 apiVersion: hops.ops.com.ai/v1alpha1
 kind: PSQLStack

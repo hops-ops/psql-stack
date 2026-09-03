@@ -4,9 +4,103 @@ import models.io.upbound.dev.meta.v1alpha1 as metav1alpha1
 # ==============================================================================
 # Unit tests for PSQLBranch XRD
 #
-# Verify: cross-ns vs same-ns composition, scaleToZero defaults, TTL annotation,
-# overrideAllValues escape hatch, providerConfig defaults.
+# Verify: staged cross-ns vs same-ns composition, recovery credentials,
+# readiness/deletion ordering, sizing, lifecycle toggles, and provider defaults.
 # ==============================================================================
+
+_ready_branch_snapshot = {
+    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+    kind = "Object"
+    metadata = {
+        name = "observed-branch-snapshot"
+        annotations = {
+            "crossplane.io/composition-resource-name" = "branch-snapshot"
+            "gotemplating.fn.crossplane.io/composition-resource-name" = "branch-snapshot"
+        }
+    }
+    status = {
+        conditions = [{type = "Ready", status = "True"}]
+        atProvider.manifest.status = {
+            boundVolumeSnapshotContentName = "snapcontent-ready"
+            readyToUse = True
+        }
+    }
+}
+
+_ready_source_snapshot = {
+    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+    kind = "Object"
+    metadata = {
+        name = "observed-source-snapshot"
+        annotations = {
+            "crossplane.io/composition-resource-name" = "source-snapshot"
+            "gotemplating.fn.crossplane.io/composition-resource-name" = "source-snapshot"
+        }
+    }
+    status = {
+        conditions = [{type = "Ready", status = "True"}]
+        atProvider.manifest.status = {
+            boundVolumeSnapshotContentName = "snapcontent-ready"
+            readyToUse = True
+        }
+    }
+}
+
+_ready_source_snapshot_content = {
+    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+    kind = "Object"
+    metadata = {
+        name = "observed-source-snapshot-content"
+        annotations = {
+            "crossplane.io/composition-resource-name" = "source-snapshot-content"
+            "gotemplating.fn.crossplane.io/composition-resource-name" = "source-snapshot-content"
+        }
+    }
+    status = {
+        conditions = [{type = "Ready", status = "True"}]
+        atProvider.manifest = {
+            spec = {
+                driver = "ebs.csi.eks.amazonaws.com"
+                source.snapshotHandle = "snap-0123456789abcdef0"
+                sourceVolumeMode = "Filesystem"
+                volumeSnapshotClassName = "psql"
+            }
+            status.readyToUse = True
+        }
+    }
+}
+
+_ready_branch_snapshot_content = {
+    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+    kind = "Object"
+    metadata = {
+        name = "observed-branch-snapshot-content"
+        annotations = {
+            "crossplane.io/composition-resource-name" = "branch-snapshot-content"
+            "gotemplating.fn.crossplane.io/composition-resource-name" = "branch-snapshot-content"
+        }
+    }
+    status = {
+        conditions = [{type = "Ready", status = "True"}]
+        atProvider.manifest.status.readyToUse = True
+    }
+}
+
+_ready_cnpg_cluster = {
+    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+    kind = "Object"
+    metadata = {
+        name = "observed-cnpg-cluster"
+        annotations = {
+            "crossplane.io/composition-resource-name" = "cnpg-cluster"
+            "gotemplating.fn.crossplane.io/composition-resource-name" = "cnpg-cluster"
+        }
+    }
+    status = {
+        conditions = [{type = "Ready", status = "True"}]
+        atProvider.manifest.status.phase = "Cluster in healthy state"
+    }
+}
 
 _items = [
     # ==========================================================================
@@ -27,6 +121,7 @@ _items = [
                     source = {name = "src-app"}
                 }
             }
+            observedResources = [_ready_branch_snapshot]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -67,10 +162,14 @@ _items = [
                         # the override path.
                         spec = {
                             instances = 1
-                            bootstrap.recovery.volumeSnapshots.storage = {
-                                name = "br-same-snap"
-                                kind = "VolumeSnapshot"
-                                apiGroup = "snapshot.storage.k8s.io"
+                            bootstrap.recovery = {
+                                database = "app"
+                                owner = "app"
+                                volumeSnapshots.storage = {
+                                    name = "br-same-snap"
+                                    kind = "VolumeSnapshot"
+                                    apiGroup = "snapshot.storage.k8s.io"
+                                }
                             }
                         }
                     }
@@ -80,16 +179,11 @@ _items = [
     }
 
     # ==========================================================================
-    # Cross-namespace, first reconcile: source-snapshot has bound to its
-    # VolumeSnapshotContent, branch-snapshot's underlying VolumeSnapshot was
-    # rendered earlier with an empty volumeSnapshotContentName and hasn't
-    # bound yet. The state-status logic must read from source-snapshot
-    # (since branch-snapshot's bound content is still empty), so the
-    # branch-ns VolumeSnapshot now renders with the source's content name —
-    # closing the chicken-and-egg.
+    # Cross-namespace, second reconcile: once the source snapshot is bound,
+    # the branch snapshot is rendered with a non-empty static content ref.
     # ==========================================================================
     metav1alpha1.CompositionTest {
-        metadata.name = "cross-ns-prefers-source-content-when-branch-empty"
+        metadata.name = "cross-ns-imports-source-handle-into-branch-content"
         spec = {
             compositionPath = "apis/psqlbranches/composition.yaml"
             xrdPath = "apis/psqlbranches/definition.yaml"
@@ -103,7 +197,6 @@ _items = [
                 }
             }
             observedResources = [
-                # source-ns VolumeSnapshot (Object wrapper) — bound.
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                     kind = "Object"
@@ -115,41 +208,44 @@ _items = [
                             "gotemplating.fn.crossplane.io/composition-resource-name" = "source-snapshot"
                         }
                     }
-                    status.atProvider.manifest.status.boundVolumeSnapshotContentName = "snapcontent-from-source"
-                }
-                # branch-ns VolumeSnapshot (Object wrapper) — created with
-                # empty content reference on the prior reconcile, not bound.
-                {
-                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
-                    kind = "Object"
-                    metadata = {
-                        name = "br-x-branch-snapshot"
-                        namespace = "preview-pr-1"
-                        annotations = {
-                            "crossplane.io/composition-resource-name" = "branch-snapshot"
-                            "gotemplating.fn.crossplane.io/composition-resource-name" = "branch-snapshot"
+                    status = {
+                        conditions = [{type = "Ready", status = "True"}]
+                        atProvider.manifest.status = {
+                            boundVolumeSnapshotContentName = "snapcontent-from-source"
+                            readyToUse = True
                         }
                     }
-                    status.atProvider.manifest.status.boundVolumeSnapshotContentName = ""
                 }
+                _ready_source_snapshot_content
             ]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                     kind = "Object"
+                    metadata.name = "br-x-branch-snapshot-content"
+                    spec.forProvider.manifest.spec = {
+                        deletionPolicy = "Retain"
+                        driver = "ebs.csi.eks.amazonaws.com"
+                        source.snapshotHandle = "snap-0123456789abcdef0"
+                        volumeSnapshotRef = {
+                            name = "br-x-snap"
+                            namespace = "preview-pr-1"
+                        }
+                    }
+                }
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
                     metadata.name = "br-x-branch-snapshot"
-                    spec.forProvider.manifest.spec.source.volumeSnapshotContentName = "snapcontent-from-source"
+                    spec.forProvider.manifest.spec.source.volumeSnapshotContentName = "preview-pr-1-br-x-content"
                 }
             ]
         }
     }
 
     # ==========================================================================
-    # Cross-namespace, steady state: branch-snapshot has bound (its
-    # boundVolumeSnapshotContentName is populated). Reading branch's value
-    # is fine here — it will match source's. This locks in that the
-    # fallback doesn't override a populated branch content with the
-    # source's value.
+    # Cross-namespace steady state: both snapshots are bound. The recovered
+    # cluster may now be rendered from the branch-namespace snapshot.
     # ==========================================================================
     metav1alpha1.CompositionTest {
         metadata.name = "cross-ns-uses-branch-content-when-bound"
@@ -166,39 +262,23 @@ _items = [
                 }
             }
             observedResources = [
-                {
-                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
-                    kind = "Object"
-                    metadata = {
-                        name = "br-y-source-snapshot"
-                        namespace = "preview-pr-2"
-                        annotations = {
-                            "crossplane.io/composition-resource-name" = "source-snapshot"
-                            "gotemplating.fn.crossplane.io/composition-resource-name" = "source-snapshot"
-                        }
-                    }
-                    status.atProvider.manifest.status.boundVolumeSnapshotContentName = "snapcontent-from-source"
-                }
-                {
-                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
-                    kind = "Object"
-                    metadata = {
-                        name = "br-y-branch-snapshot"
-                        namespace = "preview-pr-2"
-                        annotations = {
-                            "crossplane.io/composition-resource-name" = "branch-snapshot"
-                            "gotemplating.fn.crossplane.io/composition-resource-name" = "branch-snapshot"
-                        }
-                    }
-                    status.atProvider.manifest.status.boundVolumeSnapshotContentName = "snapcontent-from-branch"
-                }
+                _ready_source_snapshot,
+                _ready_source_snapshot_content,
+                _ready_branch_snapshot_content,
+                _ready_branch_snapshot,
             ]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                     kind = "Object"
                     metadata.name = "br-y-branch-snapshot"
-                    spec.forProvider.manifest.spec.source.volumeSnapshotContentName = "snapcontent-from-branch"
+                    spec.forProvider.manifest.spec.source.volumeSnapshotContentName = "preview-pr-2-br-y-content"
+                }
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "br-y-cnpg-cluster"
+                    spec.forProvider.manifest.spec.bootstrap.recovery.volumeSnapshots.storage.name = "br-y-snap"
                 }
             ]
         }
@@ -225,6 +305,7 @@ _items = [
                     branch.storage.size = "150Gi"
                 }
             }
+            observedResources = [_ready_branch_snapshot]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -256,6 +337,7 @@ _items = [
                     }
                 }
             }
+            observedResources = [_ready_branch_snapshot]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -287,6 +369,7 @@ _items = [
                     postgresql.version = "17.4"
                 }
             }
+            observedResources = [_ready_branch_snapshot]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -299,8 +382,7 @@ _items = [
     }
 
     # ==========================================================================
-    # Test 2: cross-namespace branch — source-snapshot in source ns + branch-
-    # snapshot in branch ns + Cluster in branch ns.
+    # Test 2: cross-namespace first reconcile renders only the source snapshot.
     # ==========================================================================
     metav1alpha1.CompositionTest {
         metadata.name = "cross-namespace-branch-bridges-via-content"
@@ -332,24 +414,6 @@ _items = [
                             namespace = "team-app"
                         }
                         spec.source.persistentVolumeClaimName = "src-app-1"
-                    }
-                }
-                {
-                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
-                    kind = "Object"
-                    metadata.name = "br-x-branch-snapshot"
-                    spec.forProvider.manifest.metadata = {
-                        name = "br-x-snap"
-                        namespace = "preview-pr-1"
-                    }
-                }
-                {
-                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
-                    kind = "Object"
-                    metadata.name = "br-x-cnpg-cluster"
-                    spec.forProvider.manifest.metadata = {
-                        name = "br-x"
-                        namespace = "preview-pr-1"
                     }
                 }
             ]
@@ -408,6 +472,7 @@ _items = [
                     source = {name = "src"}
                 }
             }
+            observedResources = [_ready_branch_snapshot]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -445,6 +510,7 @@ _items = [
                     scaleToZero = {enabled = False}
                 }
             }
+            observedResources = [_ready_branch_snapshot]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -477,6 +543,7 @@ _items = [
                     ttl = {enabled = True, after = "24h"}
                 }
             }
+            observedResources = [_ready_branch_snapshot]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -508,6 +575,7 @@ _items = [
                     source = {name = "src", snapshotClassName = "longhorn-snap"}
                 }
             }
+            observedResources = [_ready_branch_snapshot]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -540,6 +608,7 @@ _items = [
                     }
                 }
             }
+            observedResources = [_ready_branch_snapshot]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -571,6 +640,7 @@ _items = [
                     source = {name = "src"}
                 }
             }
+            observedResources = [_ready_branch_snapshot]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -580,6 +650,117 @@ _items = [
                         name = "prod-cluster"
                         kind = "ProviderConfig"
                     }
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
+    # Recovery credentials: custom owner/database use a CNPG-managed local
+    # secret unless the caller explicitly supplies one.
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "app-recovery-credentials-are-branch-local"
+        spec = {
+            compositionPath = "apis/psqlbranches/composition.yaml"
+            xrdPath = "apis/psqlbranches/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLBranch {
+                metadata = {name = "harmony-api-db", namespace = "preview-pr-600"}
+                spec = {
+                    clusterName = "production"
+                    source = {name = "harmony-api-db"}
+                    app = {role = "harmony_bootstrap", database = "app"}
+                    superuser.enabled = True
+                }
+            }
+            observedResources = [_ready_branch_snapshot]
+            assertResources = [{
+                apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                kind = "Object"
+                metadata.name = "harmony-api-db-cnpg-cluster"
+                spec.forProvider.manifest.spec = {
+                    enableSuperuserAccess = True
+                    bootstrap.recovery = {
+                        owner = "harmony_bootstrap"
+                        database = "app"
+                    }
+                }
+            }]
+        }
+    }
+
+    metav1alpha1.CompositionTest {
+        metadata.name = "explicit-recovery-secrets-flow-to-cnpg"
+        spec = {
+            compositionPath = "apis/psqlbranches/composition.yaml"
+            xrdPath = "apis/psqlbranches/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLBranch {
+                metadata = {name = "br-secrets", namespace = "default"}
+                spec = {
+                    clusterName = "production"
+                    source = {name = "source"}
+                    app.secretName = "app-creds"
+                    superuser = {enabled = True, secretName = "postgres-creds"}
+                }
+            }
+            observedResources = [_ready_branch_snapshot]
+            assertResources = [{
+                apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                kind = "Object"
+                metadata.name = "br-secrets-cnpg-cluster"
+                spec.forProvider.manifest.spec = {
+                    bootstrap.recovery.secret.name = "app-creds"
+                    enableSuperuserAccess = True
+                    superuserSecret.name = "postgres-creds"
+                }
+            }]
+        }
+    }
+
+    # ==========================================================================
+    # All three Usage locks appear only after their endpoints are observed
+    # Ready. The staged observed fixture separately exercises final status.
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "ready-cross-namespace-branch-locks-deletion-order"
+        spec = {
+            compositionPath = "apis/psqlbranches/composition.yaml"
+            xrdPath = "apis/psqlbranches/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLBranch {
+                metadata = {name = "br-ready", namespace = "preview-pr-1"}
+                spec = {
+                    clusterName = "production"
+                    source = {name = "source", namespace = "staging"}
+                }
+            }
+            observedResources = [
+                _ready_source_snapshot,
+                _ready_source_snapshot_content,
+                _ready_branch_snapshot_content,
+                _ready_branch_snapshot,
+                _ready_cnpg_cluster,
+            ]
+            assertResources = [
+                {
+                    apiVersion = "protection.crossplane.io/v1beta1"
+                    kind = "Usage"
+                    metadata.name = "br-ready-delete-branch-content-before-source-snapshot"
+                }
+                {
+                    apiVersion = "protection.crossplane.io/v1beta1"
+                    kind = "Usage"
+                    metadata.name = "br-ready-delete-branch-snapshot-before-branch-content"
+                }
+                {
+                    apiVersion = "protection.crossplane.io/v1beta1"
+                    kind = "Usage"
+                    metadata.name = "br-ready-delete-cnpg-cluster-before-branch-snapshot"
                 }
             ]
         }

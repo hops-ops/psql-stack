@@ -30,23 +30,33 @@
 # Object Ready=true means the ExternalSecret CR was applied; SecretSynced
 # follows fast enough that we don't inspect the wrapped ES status further.
 # ==============================================================================
-{{- $esResourceNames := list "external-secret-app" "external-secret-superuser" }}
-{{- $esPresent := 0 }}
+{{- $esResourceNames := list }}
+{{- $appES := $state.app.externalSecret }}
+{{- if and $appES.secretStore $appES.secretRef }}
+  {{- $esResourceNames = append $esResourceNames "external-secret-app" }}
+{{- end }}
+{{- $suES := $state.superuser.externalSecret }}
+{{- if and $state.superuser.enabled $suES.secretStore $suES.secretRef }}
+  {{- $esResourceNames = append $esResourceNames "external-secret-superuser" }}
+{{- end }}
 {{- $esReadyCount := 0 }}
 {{- range $name := $esResourceNames }}
   {{- $entry := get $observed $name | default dict }}
   {{- if $entry }}
-    {{- $esPresent = add $esPresent 1 }}
     {{- $resource := $entry.resource | default dict }}
     {{- $conditions := (($resource.status | default dict).conditions | default list) }}
+    {{- $resourceReady := false }}
     {{- range $conditions }}
       {{- if and (eq .type "Ready") (eq .status "True") }}
-        {{- $esReadyCount = add $esReadyCount 1 }}
+        {{- $resourceReady = true }}
       {{- end }}
+    {{- end }}
+    {{- if $resourceReady }}
+      {{- $esReadyCount = add $esReadyCount 1 }}
     {{- end }}
   {{- end }}
 {{- end }}
-{{- $esReady := eq $esPresent $esReadyCount }}
+{{- $esReady := eq (len $esResourceNames) $esReadyCount }}
 
 {{- $state = set $state "observed" (dict
   "cluster" (dict "ready" $clusterReady "phase" $clusterPhase)

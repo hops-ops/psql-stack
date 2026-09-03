@@ -8,12 +8,12 @@ import models.io.upbound.dev.meta.v1alpha1 as metav1alpha1
 # readiness/deletion ordering, sizing, lifecycle toggles, and provider defaults.
 # ==============================================================================
 
-_ready_branch_snapshot = lambda namespace {
+_ready_branch_snapshot = lambda namespace, name {
   {
     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
     kind = "Object"
     metadata = {
-        name = "observed-branch-snapshot"
+        name = name
         namespace = namespace
         annotations = {
             "crossplane.io/composition-resource-name" = "branch-snapshot"
@@ -30,12 +30,12 @@ _ready_branch_snapshot = lambda namespace {
 }
 }
 
-_ready_source_snapshot = lambda namespace {
+_ready_source_snapshot = lambda namespace, name {
   {
     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
     kind = "Object"
     metadata = {
-        name = "observed-source-snapshot"
+        name = name
         namespace = namespace
         annotations = {
             "crossplane.io/composition-resource-name" = "source-snapshot"
@@ -52,12 +52,12 @@ _ready_source_snapshot = lambda namespace {
 }
 }
 
-_ready_source_snapshot_content = lambda namespace {
+_ready_source_snapshot_content = lambda namespace, name {
   {
     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
     kind = "Object"
     metadata = {
-        name = "observed-source-snapshot-content"
+        name = name
         namespace = namespace
         annotations = {
             "crossplane.io/composition-resource-name" = "source-snapshot-content"
@@ -79,12 +79,12 @@ _ready_source_snapshot_content = lambda namespace {
 }
 }
 
-_ready_branch_snapshot_content = lambda namespace {
+_ready_branch_snapshot_content = lambda namespace, name {
   {
     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
     kind = "Object"
     metadata = {
-        name = "observed-branch-snapshot-content"
+        name = name
         namespace = namespace
         annotations = {
             "crossplane.io/composition-resource-name" = "branch-snapshot-content"
@@ -98,12 +98,12 @@ _ready_branch_snapshot_content = lambda namespace {
 }
 }
 
-_ready_cnpg_cluster = lambda namespace {
+_ready_cnpg_cluster = lambda namespace, name {
   {
     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
     kind = "Object"
     metadata = {
-        name = "observed-cnpg-cluster"
+        name = name
         namespace = namespace
         annotations = {
             "crossplane.io/composition-resource-name" = "cnpg-cluster"
@@ -136,7 +136,7 @@ _items = [
                     source = {name = "src-app"}
                 }
             }
-            observedResources = [_ready_branch_snapshot("default")]
+            observedResources = [_ready_branch_snapshot("default", "br-same-branch-snapshot")]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -231,7 +231,7 @@ _items = [
                         }
                     }
                 }
-                _ready_source_snapshot_content("preview-pr-1")
+                _ready_source_snapshot_content("preview-pr-1", "br-x-source-snapshot-content")
             ]
             assertResources = [
                 {
@@ -277,10 +277,10 @@ _items = [
                 }
             }
             observedResources = [
-                _ready_source_snapshot("preview-pr-2"),
-                _ready_source_snapshot_content("preview-pr-2"),
-                _ready_branch_snapshot_content("preview-pr-2"),
-                _ready_branch_snapshot("preview-pr-2"),
+                _ready_source_snapshot("preview-pr-2", "br-y-source-snapshot"),
+                _ready_source_snapshot_content("preview-pr-2", "br-y-source-snapshot-content"),
+                _ready_branch_snapshot_content("preview-pr-2", "br-y-branch-snapshot-content"),
+                _ready_branch_snapshot("preview-pr-2", "br-y-branch-snapshot"),
             ]
             assertResources = [
                 {
@@ -320,7 +320,7 @@ _items = [
                     branch.storage.size = "150Gi"
                 }
             }
-            observedResources = [_ready_branch_snapshot("default")]
+            observedResources = [_ready_branch_snapshot("default", "br-explicit-branch-snapshot")]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -352,7 +352,7 @@ _items = [
                     }
                 }
             }
-            observedResources = [_ready_branch_snapshot("default")]
+            observedResources = [_ready_branch_snapshot("default", "br-inherit-branch-snapshot")]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -384,7 +384,7 @@ _items = [
                     postgresql.version = "17.4"
                 }
             }
-            observedResources = [_ready_branch_snapshot("default")]
+            observedResources = [_ready_branch_snapshot("default", "br-pinned-branch-snapshot")]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -487,7 +487,7 @@ _items = [
                     source = {name = "src"}
                 }
             }
-            observedResources = [_ready_branch_snapshot("default")]
+            observedResources = [_ready_branch_snapshot("default", "br-s2z-branch-snapshot")]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -525,7 +525,7 @@ _items = [
                     scaleToZero = {enabled = False}
                 }
             }
-            observedResources = [_ready_branch_snapshot("default")]
+            observedResources = [_ready_branch_snapshot("default", "br-no-s2z-branch-snapshot")]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -558,7 +558,7 @@ _items = [
                     ttl = {enabled = True, after = "24h"}
                 }
             }
-            observedResources = [_ready_branch_snapshot("default")]
+            observedResources = [_ready_branch_snapshot("default", "br-ttl-branch-snapshot")]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -590,7 +590,7 @@ _items = [
                     source = {name = "src", snapshotClassName = "longhorn-snap"}
                 }
             }
-            observedResources = [_ready_branch_snapshot("default")]
+            observedResources = [_ready_branch_snapshot("default", "br-custom-vsc-branch-snapshot")]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -623,7 +623,7 @@ _items = [
                     }
                 }
             }
-            observedResources = [_ready_branch_snapshot("default")]
+            observedResources = [_ready_branch_snapshot("default", "br-override-branch-snapshot")]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -655,7 +655,7 @@ _items = [
                     source = {name = "src"}
                 }
             }
-            observedResources = [_ready_branch_snapshot("default")]
+            observedResources = [_ready_branch_snapshot("default", "br-pc-branch-snapshot")]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -690,7 +690,7 @@ _items = [
                     superuser.enabled = True
                 }
             }
-            observedResources = [_ready_branch_snapshot("preview-pr-600")]
+            observedResources = [_ready_branch_snapshot("preview-pr-600", "harmony-api-db-branch-snapshot")]
             assertResources = [{
                 apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                 kind = "Object"
@@ -722,7 +722,7 @@ _items = [
                     superuser = {enabled = True, secretName = "postgres-creds"}
                 }
             }
-            observedResources = [_ready_branch_snapshot("default")]
+            observedResources = [_ready_branch_snapshot("default", "br-secrets-branch-snapshot")]
             assertResources = [{
                 apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                 kind = "Object"
@@ -755,11 +755,11 @@ _items = [
                 }
             }
             observedResources = [
-                _ready_source_snapshot("preview-pr-1"),
-                _ready_source_snapshot_content("preview-pr-1"),
-                _ready_branch_snapshot_content("preview-pr-1"),
-                _ready_branch_snapshot("preview-pr-1"),
-                _ready_cnpg_cluster("preview-pr-1"),
+                _ready_source_snapshot("preview-pr-1", "br-ready-source-snapshot"),
+                _ready_source_snapshot_content("preview-pr-1", "br-ready-source-snapshot-content"),
+                _ready_branch_snapshot_content("preview-pr-1", "br-ready-branch-snapshot-content"),
+                _ready_branch_snapshot("preview-pr-1", "br-ready-branch-snapshot"),
+                _ready_cnpg_cluster("preview-pr-1", "br-ready-cnpg-cluster"),
             ]
             assertResources = [
                 {

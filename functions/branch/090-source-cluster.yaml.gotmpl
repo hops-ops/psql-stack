@@ -1,0 +1,33 @@
+# code: language=yaml
+#
+# Observe the source CNPG Cluster before snapshotting its PVC.
+#
+# A PSQLCluster's Kubernetes Object can exist before CNPG finishes initdb and
+# elects a healthy primary. Snapshotting during that window can capture an
+# incomplete data directory that recovers without a consistent system ID.
+# Observe-only management keeps the source outside this branch's lifecycle.
+#
+
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-source-cluster
+  annotations:
+    {{ setResourceNameAnnotation "source-cluster" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies:
+    - Observe
+  readiness:
+    policy: DeriveFromObject
+  forProvider:
+    manifest:
+      apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      metadata:
+        name: {{ $state.source.name }}
+        namespace: {{ $state.source.namespace }}
+  providerConfigRef:
+    name: {{ $state.kubernetesProviderConfigRef.name }}
+    kind: {{ $state.kubernetesProviderConfigRef.kind }}

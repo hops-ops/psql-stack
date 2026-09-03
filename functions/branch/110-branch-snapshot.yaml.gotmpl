@@ -11,9 +11,12 @@
 
 {{- $source := $state.source }}
 {{- $sourceContent := $state.observed.sourceSnapshotContent }}
-{{- $render := or
-  (not $state.crossNamespace)
-  (and (ne $sourceContent.handle "") (ne $sourceContent.driver ""))
+{{- $render := and
+  $state.observed.sourceCluster.ready
+  (or
+    (not $state.crossNamespace)
+    (and (ne $sourceContent.handle "") (ne $sourceContent.driver ""))
+  )
 }}
 {{- if $render }}
 ---

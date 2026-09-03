@@ -117,7 +117,63 @@ _ready_cnpg_cluster = lambda namespace, name {
 }
 }
 
+_ready_source_cluster = lambda namespace, name {
+  {
+    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+    kind = "Object"
+    metadata = {
+        name = name
+        namespace = namespace
+        annotations = {
+            "crossplane.io/composition-resource-name" = "source-cluster"
+            "gotemplating.fn.crossplane.io/composition-resource-name" = "source-cluster"
+        }
+    }
+    status = {
+        conditions = [{type = "Ready", status = "True"}]
+        atProvider.manifest.status.phase = "Cluster in healthy state"
+    }
+}
+}
+
 _items = [
+    # ==========================================================================
+    # A branch starts by observing its source CNPG Cluster. Snapshot resources
+    # are gated until this Object reports both Ready=True and CNPG's healthy
+    # phase; a create-only Object condition is not a sufficient signal.
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "observes-source-cluster-before-snapshotting"
+        spec = {
+            compositionPath = "apis/psqlbranches/composition.yaml"
+            xrdPath = "apis/psqlbranches/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLBranch {
+                metadata = {name = "br-gated", namespace = "preview-pr-1"}
+                spec = {
+                    clusterName = "production"
+                    source = {name = "source", namespace = "staging"}
+                }
+            }
+            assertResources = [{
+                apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                kind = "Object"
+                metadata.name = "br-gated-source-cluster"
+                spec = {
+                    managementPolicies = ["Observe"]
+                    readiness.policy = "DeriveFromObject"
+                    forProvider.manifest = {
+                        apiVersion = "postgresql.cnpg.io/v1"
+                        kind = "Cluster"
+                        metadata = {name = "source", namespace = "staging"}
+                    }
+                    providerConfigRef = {name = "production", kind = "ProviderConfig"}
+                }
+            }]
+        }
+    }
+
     # ==========================================================================
     # Test 1: same-namespace branch — only branch-snapshot composed (no source-
     # snapshot bridging), references source PVC directly.
@@ -136,7 +192,10 @@ _items = [
                     source = {name = "src-app"}
                 }
             }
-            observedResources = [_ready_branch_snapshot("default", "br-same-branch-snapshot")]
+            observedResources = [
+                _ready_source_cluster("default", "br-same-source-cluster"),
+                _ready_branch_snapshot("default", "br-same-branch-snapshot"),
+            ]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -212,6 +271,7 @@ _items = [
                 }
             }
             observedResources = [
+                _ready_source_cluster("preview-pr-1", "br-x-source-cluster"),
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                     kind = "Object"
@@ -277,6 +337,7 @@ _items = [
                 }
             }
             observedResources = [
+                _ready_source_cluster("a-b", "c-source-cluster"),
                 _ready_source_snapshot("a-b", "c-source-snapshot"),
                 _ready_source_snapshot_content("a-b", "c-source-snapshot-content"),
             ]
@@ -312,6 +373,7 @@ _items = [
                 }
             }
             observedResources = [
+                _ready_source_cluster("a", "b-c-source-cluster"),
                 _ready_source_snapshot("a", "b-c-source-snapshot"),
                 _ready_source_snapshot_content("a", "b-c-source-snapshot-content"),
             ]
@@ -351,6 +413,7 @@ _items = [
                 }
             }
             observedResources = [
+                _ready_source_cluster("preview-pr-2", "br-y-source-cluster"),
                 _ready_source_snapshot("preview-pr-2", "br-y-source-snapshot"),
                 _ready_source_snapshot_content("preview-pr-2", "br-y-source-snapshot-content"),
                 _ready_branch_snapshot_content("preview-pr-2", "br-y-branch-snapshot-content"),
@@ -394,7 +457,10 @@ _items = [
                     branch.storage.size = "150Gi"
                 }
             }
-            observedResources = [_ready_branch_snapshot("default", "br-explicit-branch-snapshot")]
+            observedResources = [
+                _ready_source_cluster("default", "br-explicit-source-cluster"),
+                _ready_branch_snapshot("default", "br-explicit-branch-snapshot"),
+            ]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -426,7 +492,10 @@ _items = [
                     }
                 }
             }
-            observedResources = [_ready_branch_snapshot("default", "br-inherit-branch-snapshot")]
+            observedResources = [
+                _ready_source_cluster("default", "br-inherit-source-cluster"),
+                _ready_branch_snapshot("default", "br-inherit-branch-snapshot"),
+            ]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -458,7 +527,10 @@ _items = [
                     postgresql.version = "17.4"
                 }
             }
-            observedResources = [_ready_branch_snapshot("default", "br-pinned-branch-snapshot")]
+            observedResources = [
+                _ready_source_cluster("default", "br-pinned-source-cluster"),
+                _ready_branch_snapshot("default", "br-pinned-branch-snapshot"),
+            ]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -471,7 +543,8 @@ _items = [
     }
 
     # ==========================================================================
-    # Test 2: cross-namespace first reconcile renders only the source snapshot.
+    # Test 2: once the source CNPG cluster is healthy, cross-namespace
+    # reconciliation renders the source snapshot.
     # ==========================================================================
     metav1alpha1.CompositionTest {
         metadata.name = "cross-namespace-branch-bridges-via-content"
@@ -487,6 +560,9 @@ _items = [
                     source = {name = "src-app", namespace = "team-app"}
                 }
             }
+            observedResources = [
+                _ready_source_cluster("preview-pr-1", "br-x-source-cluster"),
+            ]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -530,6 +606,9 @@ _items = [
                     source = {name = "src-app", namespace = "team-app"}
                 }
             }
+            observedResources = [
+                _ready_source_cluster("other-team-preview", "br-x-source-cluster"),
+            ]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -561,7 +640,10 @@ _items = [
                     source = {name = "src"}
                 }
             }
-            observedResources = [_ready_branch_snapshot("default", "br-s2z-branch-snapshot")]
+            observedResources = [
+                _ready_source_cluster("default", "br-s2z-source-cluster"),
+                _ready_branch_snapshot("default", "br-s2z-branch-snapshot"),
+            ]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -599,7 +681,10 @@ _items = [
                     scaleToZero = {enabled = False}
                 }
             }
-            observedResources = [_ready_branch_snapshot("default", "br-no-s2z-branch-snapshot")]
+            observedResources = [
+                _ready_source_cluster("default", "br-no-s2z-source-cluster"),
+                _ready_branch_snapshot("default", "br-no-s2z-branch-snapshot"),
+            ]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -632,7 +717,10 @@ _items = [
                     ttl = {enabled = True, after = "24h"}
                 }
             }
-            observedResources = [_ready_branch_snapshot("default", "br-ttl-branch-snapshot")]
+            observedResources = [
+                _ready_source_cluster("default", "br-ttl-source-cluster"),
+                _ready_branch_snapshot("default", "br-ttl-branch-snapshot"),
+            ]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -664,7 +752,10 @@ _items = [
                     source = {name = "src", snapshotClassName = "longhorn-snap"}
                 }
             }
-            observedResources = [_ready_branch_snapshot("default", "br-custom-vsc-branch-snapshot")]
+            observedResources = [
+                _ready_source_cluster("default", "br-custom-vsc-source-cluster"),
+                _ready_branch_snapshot("default", "br-custom-vsc-branch-snapshot"),
+            ]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -697,7 +788,10 @@ _items = [
                     }
                 }
             }
-            observedResources = [_ready_branch_snapshot("default", "br-override-branch-snapshot")]
+            observedResources = [
+                _ready_source_cluster("default", "br-override-source-cluster"),
+                _ready_branch_snapshot("default", "br-override-branch-snapshot"),
+            ]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -729,7 +823,10 @@ _items = [
                     source = {name = "src"}
                 }
             }
-            observedResources = [_ready_branch_snapshot("default", "br-pc-branch-snapshot")]
+            observedResources = [
+                _ready_source_cluster("default", "br-pc-source-cluster"),
+                _ready_branch_snapshot("default", "br-pc-branch-snapshot"),
+            ]
             assertResources = [
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -764,7 +861,10 @@ _items = [
                     superuser.enabled = True
                 }
             }
-            observedResources = [_ready_branch_snapshot("preview-pr-600", "harmony-api-db-branch-snapshot")]
+            observedResources = [
+                _ready_source_cluster("preview-pr-600", "harmony-api-db-source-cluster"),
+                _ready_branch_snapshot("preview-pr-600", "harmony-api-db-branch-snapshot"),
+            ]
             assertResources = [{
                 apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                 kind = "Object"
@@ -796,7 +896,10 @@ _items = [
                     superuser = {enabled = True, secretName = "postgres-creds"}
                 }
             }
-            observedResources = [_ready_branch_snapshot("default", "br-secrets-branch-snapshot")]
+            observedResources = [
+                _ready_source_cluster("default", "br-secrets-source-cluster"),
+                _ready_branch_snapshot("default", "br-secrets-branch-snapshot"),
+            ]
             assertResources = [{
                 apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                 kind = "Object"
@@ -829,6 +932,7 @@ _items = [
                 }
             }
             observedResources = [
+                _ready_source_cluster("preview-pr-1", "br-ready-source-cluster"),
                 _ready_source_snapshot("preview-pr-1", "br-ready-source-snapshot"),
                 _ready_source_snapshot_content("preview-pr-1", "br-ready-source-snapshot-content"),
                 _ready_branch_snapshot_content("preview-pr-1", "br-ready-branch-snapshot-content"),

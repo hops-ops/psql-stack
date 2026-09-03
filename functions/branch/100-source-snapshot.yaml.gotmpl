@@ -24,7 +24,7 @@
 #
 
 {{- $source := $state.source }}
-{{- if $state.crossNamespace }}
+{{- if and $state.crossNamespace $state.observed.sourceCluster.ready }}
 {{- $sourceSnapName := printf "%s-%s-src" $state.namespace $state.name }}
 ---
 apiVersion: kubernetes.m.crossplane.io/v1alpha1

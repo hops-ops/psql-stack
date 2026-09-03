@@ -54,6 +54,6 @@
 ) }}
 
 {{- $state = set $state "status" (dict
-  "ready" false
+  "ready" (and $clusterReady $esReady)
   "clusterPhase" $clusterPhase
 ) }}

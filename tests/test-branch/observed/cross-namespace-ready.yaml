@@ -1,6 +1,23 @@
 apiVersion: kubernetes.m.crossplane.io/v1alpha1
 kind: Object
 metadata:
+  name: pr-142-source-cluster
+  namespace: preview-pr-142
+  annotations:
+    crossplane.io/composition-resource-name: source-cluster
+    gotemplating.fn.crossplane.io/composition-resource-name: source-cluster
+status:
+  conditions:
+    - type: Ready
+      status: "True"
+  atProvider:
+    manifest:
+      status:
+        phase: Cluster in healthy state
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
   name: pr-142-source-snapshot
   namespace: preview-pr-142
   annotations:

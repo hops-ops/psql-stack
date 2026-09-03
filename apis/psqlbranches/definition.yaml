@@ -30,7 +30,9 @@ spec:
 
           Required prerequisites on the target cluster: psql-stack (CNPG
           operator), volume-snapshot-stack (snapshot-controller + CRDs), and
-          a source PSQLCluster with `branching.enabled: true`.
+          a healthy source PSQLCluster with `branching.enabled: true`. The
+          branch observes the source CNPG Cluster and does not create a
+          snapshot until it reports Ready and `Cluster in healthy state`.
         type: object
         properties:
           spec:
@@ -69,7 +71,9 @@ spec:
                 description: |
                   Source PSQLCluster to fork. Cross-namespace supported — leave
                   `namespace` empty for same-namespace branching, or set it to
-                  the team's namespace for preview-PR-style forks.
+                  the team's namespace for preview-PR-style forks. The source
+                  CNPG Cluster must report Ready and `Cluster in healthy state`
+                  before any snapshot is created.
                 type: object
                 properties:
                   name:

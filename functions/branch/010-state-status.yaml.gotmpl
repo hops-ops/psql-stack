@@ -21,6 +21,23 @@
 {{- end }}
 {{- $clusterReady := eq $clusterPhase "Cluster in healthy state" }}
 
+# The source must be healthy before either same- or cross-namespace snapshot
+# creation. A source Object that merely exists is not sufficient: CNPG may
+# still be initializing its data directory and primary identity.
+{{- $sourceClusterEntry := get $observed "source-cluster" | default dict }}
+{{- $sourceClusterResource := $sourceClusterEntry.resource | default dict }}
+{{- $sourceClusterAtProvider := (($sourceClusterResource.status | default dict).atProvider | default dict) }}
+{{- $sourceClusterManifest := $sourceClusterAtProvider.manifest | default dict }}
+{{- $sourceClusterStatus := $sourceClusterManifest.status | default dict }}
+{{- $sourceClusterPhase := $sourceClusterStatus.phase | default "" }}
+{{- $sourceClusterObjectReady := false }}
+{{- range (($sourceClusterResource.status | default dict).conditions | default list) }}
+  {{- if and (eq .type "Ready") (eq .status "True") }}
+    {{- $sourceClusterObjectReady = true }}
+  {{- end }}
+{{- end }}
+{{- $sourceClusterReady := and $sourceClusterObjectReady (eq $sourceClusterPhase "Cluster in healthy state") }}
+
 # Read the bound VolumeSnapshotContent name. Two paths:
 #   - same-namespace: only `branch-snapshot` exists (it references the source
 #     PVC directly), so we read from it.
@@ -127,6 +144,11 @@
     "objectReady" $clusterObjectReady
     "phase" $clusterPhase
   )
+  "sourceCluster" (dict
+    "ready" $sourceClusterReady
+    "objectReady" $sourceClusterObjectReady
+    "phase" $sourceClusterPhase
+  )
   "sourceSnapshot" (dict
     "ready" $sourceReady
     "content" $sourceContent
@@ -149,6 +171,7 @@
 ) }}
 
 {{- $ready := and
+  $sourceClusterReady
   $clusterObjectReady
   $clusterReady
   $branchReady

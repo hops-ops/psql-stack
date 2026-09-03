@@ -96,6 +96,11 @@ If the cluster already ships a suitable default StorageClass, disable compositio
 
 ### Preview branch credentials
 
+`PSQLBranch` first observes the source CNPG `Cluster` and waits for both its
+Ready condition and `Cluster in healthy state` phase before creating a
+snapshot. This prevents a newly-created source from being snapshotted while
+CNPG is still initializing its data directory and primary identity.
+
 Snapshot recovery restores PostgreSQL data and roles, but not Kubernetes
 Secrets. `PSQLBranch` therefore defaults to CloudNativePG-managed,
 branch-local credentials: it creates `<branch-name>-app` for `spec.app.role`

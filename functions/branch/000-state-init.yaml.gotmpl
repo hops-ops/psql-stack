@@ -56,7 +56,9 @@
 # Cross-namespace bridging gate — render the source-ns VolumeSnapshot only when
 # the source is in a different namespace from the branch.
 {{- $crossNamespace := ne $sourceNamespace $namespace }}
-{{- $branchSnapshotContentName := printf "%s-%s-content" $namespace $name }}
+{{- $branchIdentity := printf "%d:%s%d:%s" (len $namespace) $namespace (len $name) $name }}
+{{- $branchIdentityHash := $branchIdentity | sha256sum | trunc 16 }}
+{{- $branchSnapshotContentName := printf "%.40s-%.40s-%s-content" $namespace $name $branchIdentityHash }}
 
 # ==============================================================================
 # Branch sizing

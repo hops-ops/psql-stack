@@ -72,7 +72,7 @@ status:
   atProvider:
     manifest:
       status:
-        boundVolumeSnapshotContentName: preview-pr-142-pr-142-content
+        boundVolumeSnapshotContentName: preview-pr-142-pr-142-5469d3f7f65881cc-content
         readyToUse: true
 ---
 apiVersion: kubernetes.m.crossplane.io/v1alpha1

@@ -252,7 +252,81 @@ _items = [
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                     kind = "Object"
                     metadata.name = "br-x-branch-snapshot"
-                    spec.forProvider.manifest.spec.source.volumeSnapshotContentName = "preview-pr-1-br-x-content"
+                    spec.forProvider.manifest.spec.source.volumeSnapshotContentName = "preview-pr-1-br-x-6a6f418e5232e5cb-content"
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
+    # Cluster-scoped content names include a length-delimited identity hash, so
+    # delimiter-equivalent readable prefixes cannot collide.
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "snapshot-content-name-hashes-namespace-boundary"
+        spec = {
+            compositionPath = "apis/psqlbranches/composition.yaml"
+            xrdPath = "apis/psqlbranches/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLBranch {
+                metadata = {name = "c", namespace = "a-b"}
+                spec = {
+                    clusterName = "prod"
+                    source = {name = "source", namespace = "source"}
+                }
+            }
+            observedResources = [
+                _ready_source_snapshot("a-b", "c-source-snapshot"),
+                _ready_source_snapshot_content("a-b", "c-source-snapshot-content"),
+            ]
+            assertResources = [
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "c-branch-snapshot-content"
+                    spec.forProvider.manifest.metadata.name = "a-b-c-8113510dd55cfcfd-content"
+                }
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "c-branch-snapshot"
+                    spec.forProvider.manifest.spec.source.volumeSnapshotContentName = "a-b-c-8113510dd55cfcfd-content"
+                }
+            ]
+        }
+    }
+
+    metav1alpha1.CompositionTest {
+        metadata.name = "snapshot-content-name-hashes-name-boundary"
+        spec = {
+            compositionPath = "apis/psqlbranches/composition.yaml"
+            xrdPath = "apis/psqlbranches/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLBranch {
+                metadata = {name = "b-c", namespace = "a"}
+                spec = {
+                    clusterName = "prod"
+                    source = {name = "source", namespace = "source"}
+                }
+            }
+            observedResources = [
+                _ready_source_snapshot("a", "b-c-source-snapshot"),
+                _ready_source_snapshot_content("a", "b-c-source-snapshot-content"),
+            ]
+            assertResources = [
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "b-c-branch-snapshot-content"
+                    spec.forProvider.manifest.metadata.name = "a-b-c-155b9abb65280743-content"
+                }
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "b-c-branch-snapshot"
+                    spec.forProvider.manifest.spec.source.volumeSnapshotContentName = "a-b-c-155b9abb65280743-content"
                 }
             ]
         }
@@ -287,7 +361,7 @@ _items = [
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                     kind = "Object"
                     metadata.name = "br-y-branch-snapshot"
-                    spec.forProvider.manifest.spec.source.volumeSnapshotContentName = "preview-pr-2-br-y-content"
+                    spec.forProvider.manifest.spec.source.volumeSnapshotContentName = "preview-pr-2-br-y-cb240488b9468ea4-content"
                 }
                 {
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"

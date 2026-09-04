@@ -356,7 +356,11 @@ _items = [
                     metadata.name = "br-x"
                     status = {
                         ready = False
-                        conditions = [{type = "Ready", status = "False"}]
+                        conditions = [
+                            {type = "Responsive", status = "True"}
+                            {type = "Synced", status = "True"}
+                            {type = "Ready", status = "False"}
+                        ]
                     }
                 }
             ]

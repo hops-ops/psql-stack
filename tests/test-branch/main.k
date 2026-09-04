@@ -131,7 +131,10 @@ _ready_source_cluster = lambda namespace, name {
     }
     status = {
         conditions = [{type = "Ready", status = "True"}]
-        atProvider.manifest.status.phase = "Cluster in healthy state"
+        atProvider.manifest = {
+            spec.imageName = "ghcr.io/cloudnative-pg/postgresql:17"
+            status.phase = "Cluster in healthy state"
+        }
     }
 }
 }
@@ -230,11 +233,10 @@ _items = [
                                 "hops.ops.com.ai/branch-of" = "src-app"
                             }
                         }
-                        # No imageName — when spec.postgresql.version is omitted,
-                        # CNPG falls back to its operator-default image. See
-                        # test "explicit-postgres-version-sets-imagename" for
-                        # the override path.
                         spec = {
+                            # The default is the source Cluster's exact admitted
+                            # image, not CNPG's potentially newer default.
+                            imageName = "ghcr.io/cloudnative-pg/postgresql:17"
                             instances = 1
                             bootstrap.recovery = {
                                 database = "app"

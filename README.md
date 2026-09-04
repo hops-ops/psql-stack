@@ -101,6 +101,12 @@ Ready condition and `Cluster in healthy state` phase before creating a
 snapshot. This prevents a newly-created source from being snapshotted while
 CNPG is still initializing its data directory and primary identity.
 
+The branch also inherits the exact `spec.imageName` admitted on that source
+Cluster. Snapshot recovery must use the same PostgreSQL major version, and
+inheriting the image prevents a newer CNPG operator default from silently
+trying to open an older data directory. `spec.postgresql.version` is an
+explicit override and must remain on the source snapshot's major version.
+
 Snapshot recovery restores PostgreSQL data and roles, but not Kubernetes
 Secrets. `PSQLBranch` therefore defaults to CloudNativePG-managed,
 branch-local credentials: it creates `<branch-name>-app` for `spec.app.role`

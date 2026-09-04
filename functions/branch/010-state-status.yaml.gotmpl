@@ -28,8 +28,10 @@
 {{- $sourceClusterResource := $sourceClusterEntry.resource | default dict }}
 {{- $sourceClusterAtProvider := (($sourceClusterResource.status | default dict).atProvider | default dict) }}
 {{- $sourceClusterManifest := $sourceClusterAtProvider.manifest | default dict }}
+{{- $sourceClusterSpec := $sourceClusterManifest.spec | default dict }}
 {{- $sourceClusterStatus := $sourceClusterManifest.status | default dict }}
 {{- $sourceClusterPhase := $sourceClusterStatus.phase | default "" }}
+{{- $sourceClusterImageName := $sourceClusterSpec.imageName | default "" }}
 {{- $sourceClusterObjectReady := false }}
 {{- range (($sourceClusterResource.status | default dict).conditions | default list) }}
   {{- if and (eq .type "Ready") (eq .status "True") }}
@@ -148,6 +150,7 @@
     "ready" $sourceClusterReady
     "objectReady" $sourceClusterObjectReady
     "phase" $sourceClusterPhase
+    "imageName" $sourceClusterImageName
   )
   "sourceSnapshot" (dict
     "ready" $sourceReady

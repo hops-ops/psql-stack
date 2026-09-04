@@ -9,7 +9,16 @@
 #
 
 {{- $cnpg := $state.cnpg }}
-{{- $render := ne $state.observed.branchSnapshot.content "" }}
+{{- $sourceImageName := $state.observed.sourceCluster.imageName | default "" }}
+{{- $hasImageContract := or
+  $cnpg.overrideAllValues
+  $state.postgresql.version
+  $sourceImageName
+}}
+{{- $render := and
+  (ne $state.observed.branchSnapshot.content "")
+  $hasImageContract
+}}
 
 {{- $clusterAnnotations := dict }}
 {{- if $state.scaleToZero.enabled }}
@@ -84,12 +93,14 @@ spec:
             "limits" (dict "memory" "512Mi")
           )
         }}
-        {{- /* imageName only set when version is explicit. Empty = let CNPG
-               use its operator-default image (close-enough when source tracks
-               the same chart). Hardcoding e.g. "17" was a footgun: branches
-               off PG 15/16 sources would silently mismatch and fail recovery. */}}
+        {{- /* Snapshot recovery requires the same PostgreSQL major. An explicit
+               version remains an escape hatch; otherwise copy the exact image
+               admitted on the observed source Cluster. Never fall through to
+               CNPG's current operator default, which may have a newer major. */}}
         {{- if $state.postgresql.version }}
           {{- $_ := set $clusterSpec "imageName" (printf "ghcr.io/cloudnative-pg/postgresql:%s" $state.postgresql.version) }}
+        {{- else }}
+          {{- $_ := set $clusterSpec "imageName" $sourceImageName }}
         {{- end }}
         {{- if $state.superuser.enabled }}
           {{- $_ := set $clusterSpec "enableSuperuserAccess" true }}

@@ -177,15 +177,14 @@ spec:
                   Postgres version on the branch. **Must match the source's
                   major version** for snapshot recovery to succeed — Postgres
                   doesn't downgrade or skip-upgrade across data dirs.
-                  Intentionally has no default: omit to let CNPG use its
-                  operator-default image (close-enough when source tracks
-                  the same chart), or set explicitly to mirror the source's
-                  version. A `default: "17"` here was a footgun — branches
-                  off PG 15/16 sources would silently mismatch.
+                  Intentionally has no default: when omitted, the branch
+                  inherits the exact image admitted on the observed source
+                  Cluster. Set explicitly only to override that image. The
+                  selected PostgreSQL major must match the source snapshot.
                 type: object
                 properties:
                   version:
-                    description: Postgres major version (e.g. "17"). Empty = let CNPG pick its default; mirror the source's spec.postgresql.version for safety.
+                    description: PostgreSQL image tag (for example "17" or "17.4"). Empty inherits the observed source Cluster's exact image. An override must use the source snapshot's major version.
                     type: string
 
               scaleToZero:

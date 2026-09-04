@@ -107,8 +107,8 @@
 
 # ==============================================================================
 # Postgres version — must match source's major for snapshot recovery to
-# succeed. No default: omit `imageName` downstream so CNPG falls back to its
-# operator default (matches the chart's pinned PG when source tracks it).
+# succeed. No default: downstream inherits the exact image admitted on the
+# observed source Cluster, avoiding drift when the CNPG default major changes.
 # ==============================================================================
 {{- $pgSpec := $spec.postgresql | default dict }}
 {{- $postgresql := dict

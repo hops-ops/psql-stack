@@ -12,6 +12,8 @@ status:
       status: "True"
   atProvider:
     manifest:
+      spec:
+        imageName: ghcr.io/cloudnative-pg/postgresql:17
       status:
         phase: Cluster in healthy state
 ---

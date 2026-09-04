@@ -21,16 +21,18 @@ spec:
           new CNPG Cluster bootstrapped via `bootstrap.recovery.volumeSnapshots`.
 
           Cross-namespace forks are supported (preview-pr-N namespace forking a
-          source in team-app namespace) via a bridging VolumeSnapshotContent —
-          the render template composes a VolumeSnapshot in the source namespace
-          AND a static-bound VolumeSnapshot in the branch namespace, then the
-          new Cluster references the branch-ns VolumeSnapshot for recovery.
+          source in team-app namespace) by observing the source snapshot's CSI
+          handle and importing it through a distinct branch-bound
+          VolumeSnapshotContent. The new Cluster then references the
+          branch-namespace VolumeSnapshot for recovery.
 
           Same-namespace forks collapse this into a single VolumeSnapshot.
 
           Required prerequisites on the target cluster: psql-stack (CNPG
           operator), volume-snapshot-stack (snapshot-controller + CRDs), and
-          a source PSQLCluster with `branching.enabled: true`.
+          a healthy source PSQLCluster with `branching.enabled: true`. The
+          branch observes the source CNPG Cluster and does not create a
+          snapshot until it reports Ready and `Cluster in healthy state`.
         type: object
         properties:
           spec:
@@ -69,7 +71,9 @@ spec:
                 description: |
                   Source PSQLCluster to fork. Cross-namespace supported — leave
                   `namespace` empty for same-namespace branching, or set it to
-                  the team's namespace for preview-PR-style forks.
+                  the team's namespace for preview-PR-style forks. The source
+                  CNPG Cluster must report Ready and `Cluster in healthy state`
+                  before any snapshot is created.
                 type: object
                 properties:
                   name:
@@ -134,20 +138,53 @@ spec:
                         type: string
                         default: psql
 
+              app:
+                description: |
+                  Application database owner reconciled after snapshot recovery.
+                  When secretName is empty, CloudNativePG generates a new
+                  branch-local `<branch-name>-app` Secret and resets the
+                  recovered owner's password to match it.
+                type: object
+                properties:
+                  role:
+                    description: PostgreSQL role that owns the application database. Defaults to "app".
+                    type: string
+                    default: app
+                  database:
+                    description: Application database name. Defaults to "app".
+                    type: string
+                    default: app
+                  secretName:
+                    description: Existing branch-local kubernetes.io/basic-auth Secret. Empty lets CloudNativePG generate `<branch-name>-app`.
+                    type: string
+                    default: ""
+
+              superuser:
+                description: Optional branch-local PostgreSQL superuser access for administrative or migration jobs.
+                type: object
+                properties:
+                  enabled:
+                    description: Enable password authentication for the postgres superuser. Defaults to false.
+                    type: boolean
+                    default: false
+                  secretName:
+                    description: Existing branch-local kubernetes.io/basic-auth Secret. Empty lets CloudNativePG generate `<branch-name>-superuser` when enabled.
+                    type: string
+                    default: ""
+
               postgresql:
                 description: |
                   Postgres version on the branch. **Must match the source's
                   major version** for snapshot recovery to succeed — Postgres
                   doesn't downgrade or skip-upgrade across data dirs.
-                  Intentionally has no default: omit to let CNPG use its
-                  operator-default image (close-enough when source tracks
-                  the same chart), or set explicitly to mirror the source's
-                  version. A `default: "17"` here was a footgun — branches
-                  off PG 15/16 sources would silently mismatch.
+                  Intentionally has no default: when omitted, the branch
+                  inherits the exact image admitted on the observed source
+                  Cluster. Set explicitly only to override that image. The
+                  selected PostgreSQL major must match the source snapshot.
                 type: object
                 properties:
                   version:
-                    description: Postgres major version (e.g. "17"). Empty = let CNPG pick its default; mirror the source's spec.postgresql.version for safety.
+                    description: PostgreSQL image tag (for example "17" or "17.4"). Empty inherits the observed source Cluster's exact image. An override must use the source snapshot's major version.
                     type: string
 
               scaleToZero:
@@ -212,8 +249,29 @@ spec:
               sourceSnapshotContent:
                 description: Name of the cluster-scoped VolumeSnapshotContent backing this branch (for cross-ns bridging visibility).
                 type: string
+              recoveryImageName:
+                description: Exact PostgreSQL image admitted for branch recovery and retained independently of later source availability.
+                type: string
               expiresAt:
                 description: Computed deletion deadline when ttl.enabled is true.
                 type: string
+              app:
+                description: Branch-local application connection details.
+                type: object
+                properties:
+                  secretName:
+                    type: string
+                  database:
+                    type: string
+                  host:
+                    type: string
+                  port:
+                    type: integer
+              superuser:
+                description: Branch-local superuser connection details when enabled.
+                type: object
+                properties:
+                  secretName:
+                    type: string
         required:
         - spec

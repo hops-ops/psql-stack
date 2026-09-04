@@ -94,6 +94,33 @@ spec:
 
 If the cluster already ships a suitable default StorageClass, disable composition and have PSQLCluster/PSQLBranch consumers set `spec.storage.class` explicitly.
 
+### Preview branch credentials
+
+`PSQLBranch` first observes the source CNPG `Cluster` and waits for both its
+Ready condition and `Cluster in healthy state` phase before creating a
+snapshot. This prevents a newly-created source from being snapshotted while
+CNPG is still initializing its data directory and primary identity.
+
+The branch also inherits the exact `spec.imageName` admitted on that source
+Cluster and latches it in `status.recoveryImageName`. Snapshot recovery must
+use the same PostgreSQL major version, and retaining the admitted image keeps
+the recovered branch independent of later source outages or upgrades. It also
+prevents a newer CNPG operator default from silently trying to open an older
+data directory. `spec.postgresql.version` is an explicit override and must
+remain on the source snapshot's major version.
+
+Snapshot recovery restores PostgreSQL data and roles, but not Kubernetes
+Secrets. `PSQLBranch` therefore defaults to CloudNativePG-managed,
+branch-local credentials: it creates `<branch-name>-app` for `spec.app.role`
+and resets that recovered role's password. Set `spec.app.secretName` only when
+the destination namespace already contains a compatible basic-auth Secret.
+
+For migration jobs that need the `postgres` role, set
+`spec.superuser.enabled: true`. CloudNativePG then creates
+`<branch-name>-superuser`; `spec.superuser.secretName` selects a pre-existing
+Secret instead. Connection Secret names and the branch service endpoint are
+reported in `status.app` and `status.superuser`.
+
 ```yaml
 apiVersion: hops.ops.com.ai/v1alpha1
 kind: PSQLStack

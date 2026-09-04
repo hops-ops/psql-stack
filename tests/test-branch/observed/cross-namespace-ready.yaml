@@ -1,0 +1,151 @@
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: pr-142-source-cluster
+  namespace: preview-pr-142
+  annotations:
+    crossplane.io/composition-resource-name: source-cluster
+    gotemplating.fn.crossplane.io/composition-resource-name: source-cluster
+status:
+  conditions:
+    - type: Ready
+      status: "True"
+  atProvider:
+    manifest:
+      spec:
+        imageName: ghcr.io/cloudnative-pg/postgresql:17
+      status:
+        phase: Cluster in healthy state
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: pr-142-source-snapshot
+  namespace: preview-pr-142
+  annotations:
+    crossplane.io/composition-resource-name: source-snapshot
+    gotemplating.fn.crossplane.io/composition-resource-name: source-snapshot
+status:
+  conditions:
+    - type: Ready
+      status: "True"
+  atProvider:
+    manifest:
+      status:
+        boundVolumeSnapshotContentName: source-content
+        readyToUse: true
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: pr-142-source-snapshot-content
+  namespace: preview-pr-142
+  annotations:
+    crossplane.io/composition-resource-name: source-snapshot-content
+    gotemplating.fn.crossplane.io/composition-resource-name: source-snapshot-content
+status:
+  conditions:
+    - type: Ready
+      status: "True"
+  atProvider:
+    manifest:
+      spec:
+        deletionPolicy: Delete
+        driver: ebs.csi.eks.amazonaws.com
+        source:
+          snapshotHandle: snap-0123456789abcdef0
+        sourceVolumeMode: Filesystem
+        volumeSnapshotClassName: psql
+      status:
+        readyToUse: true
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: pr-142-branch-snapshot-content
+  namespace: preview-pr-142
+  annotations:
+    crossplane.io/composition-resource-name: branch-snapshot-content
+    gotemplating.fn.crossplane.io/composition-resource-name: branch-snapshot-content
+status:
+  conditions:
+    - type: Ready
+      status: "True"
+  atProvider:
+    manifest:
+      status:
+        readyToUse: true
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: pr-142-branch-snapshot
+  namespace: preview-pr-142
+  annotations:
+    crossplane.io/composition-resource-name: branch-snapshot
+    gotemplating.fn.crossplane.io/composition-resource-name: branch-snapshot
+status:
+  conditions:
+    - type: Ready
+      status: "True"
+  atProvider:
+    manifest:
+      status:
+        boundVolumeSnapshotContentName: preview-pr-142-pr-142-5469d3f7f65881cc-content
+        readyToUse: true
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: pr-142-cnpg-cluster
+  namespace: preview-pr-142
+  annotations:
+    crossplane.io/composition-resource-name: cnpg-cluster
+    gotemplating.fn.crossplane.io/composition-resource-name: cnpg-cluster
+status:
+  conditions:
+    - type: Ready
+      status: "True"
+  atProvider:
+    manifest:
+      status:
+        phase: Cluster in healthy state
+---
+apiVersion: protection.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  name: pr-142-delete-branch-content-before-source-snapshot
+  namespace: preview-pr-142
+  annotations:
+    crossplane.io/composition-resource-name: usage-branch-content-source-snapshot
+    gotemplating.fn.crossplane.io/composition-resource-name: usage-branch-content-source-snapshot
+status:
+  conditions:
+    - type: Ready
+      status: "True"
+---
+apiVersion: protection.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  name: pr-142-delete-branch-snapshot-before-branch-content
+  namespace: preview-pr-142
+  annotations:
+    crossplane.io/composition-resource-name: usage-branch-snapshot-branch-content
+    gotemplating.fn.crossplane.io/composition-resource-name: usage-branch-snapshot-branch-content
+status:
+  conditions:
+    - type: Ready
+      status: "True"
+---
+apiVersion: protection.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  name: pr-142-delete-cnpg-cluster-before-branch-snapshot
+  namespace: preview-pr-142
+  annotations:
+    crossplane.io/composition-resource-name: usage-cnpg-cluster-branch-snapshot
+    gotemplating.fn.crossplane.io/composition-resource-name: usage-cnpg-cluster-branch-snapshot
+status:
+  conditions:
+    - type: Ready
+      status: "True"

@@ -8,6 +8,41 @@ import models.io.upbound.dev.meta.v1alpha1 as metav1alpha1
 # wiring (intent → mechanics) inside the composed Cluster + ExternalSecret.
 # ==============================================================================
 
+_ready_cnpg_cluster = lambda namespace, name {
+  {
+    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+    kind = "Object"
+    metadata = {
+        name = name
+        namespace = namespace
+        annotations = {
+            "crossplane.io/composition-resource-name" = "cnpg-cluster"
+            "gotemplating.fn.crossplane.io/composition-resource-name" = "cnpg-cluster"
+        }
+    }
+    status = {
+        conditions = [{type = "Ready", status = "True"}]
+        atProvider.manifest.status.phase = "Cluster in healthy state"
+    }
+  }
+}
+
+_ready_external_secret = lambda namespace, name, resource_name {
+  {
+    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+    kind = "Object"
+    metadata = {
+        name = name
+        namespace = namespace
+        annotations = {
+            "crossplane.io/composition-resource-name" = resource_name
+            "gotemplating.fn.crossplane.io/composition-resource-name" = resource_name
+        }
+    }
+    status.conditions = [{type = "Ready", status = "True"}]
+  }
+}
+
 _items = [
     # ==========================================================================
     # Test 1: minimal claim renders only the Cluster — no ExternalSecret by
@@ -285,6 +320,7 @@ _items = [
                     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
                     kind = "Object"
                     metadata.name = "es-app-external-secret-app"
+                    spec.readiness.policy = "DeriveFromObject"
                     spec.forProvider.manifest = {
                         apiVersion = "external-secrets.io/v1"
                         kind = "ExternalSecret"
@@ -333,6 +369,68 @@ _items = [
                     }
                 }
             ]
+        }
+    }
+
+    # A healthy CNPG Cluster is not sufficient when its configured app Secret
+    # has not synchronized yet. This is the first reconcile after the desired
+    # ExternalSecret Object is emitted.
+    metav1alpha1.CompositionTest {
+        metadata.name = "configured-external-secret-is-required-for-readiness"
+        spec = {
+            compositionPath = "apis/psqlclusters/composition.yaml"
+            xrdPath = "apis/psqlclusters/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLCluster {
+                metadata = {name = "es-pending", namespace = "default"}
+                spec = {
+                    clusterName = "my-cluster"
+                    storage = {size = "5Gi"}
+                    app.externalSecret = {
+                        secretStore = {name = "hops-aws-secrets-manager"}
+                        secretRef = {path = "my-cluster/es-pending"}
+                    }
+                }
+            }
+            observedResources = [
+                _ready_cnpg_cluster("default", "es-pending-cnpg-cluster"),
+            ]
+            assertResources = [{
+                apiVersion = "hops.ops.com.ai/v1alpha1"
+                kind = "PSQLCluster"
+                status.ready = False
+            }]
+        }
+    }
+
+    metav1alpha1.CompositionTest {
+        metadata.name = "configured-external-secret-allows-readiness-when-ready"
+        spec = {
+            compositionPath = "apis/psqlclusters/composition.yaml"
+            xrdPath = "apis/psqlclusters/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLCluster {
+                metadata = {name = "es-ready", namespace = "default"}
+                spec = {
+                    clusterName = "my-cluster"
+                    storage = {size = "5Gi"}
+                    app.externalSecret = {
+                        secretStore = {name = "hops-aws-secrets-manager"}
+                        secretRef = {path = "my-cluster/es-ready"}
+                    }
+                }
+            }
+            observedResources = [
+                _ready_cnpg_cluster("default", "es-ready-cnpg-cluster"),
+                _ready_external_secret("default", "es-ready-external-secret-app", "external-secret-app"),
+            ]
+            assertResources = [{
+                apiVersion = "hops.ops.com.ai/v1alpha1"
+                kind = "PSQLCluster"
+                status.ready = True
+            }]
         }
     }
 

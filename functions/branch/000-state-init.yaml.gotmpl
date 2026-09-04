@@ -5,6 +5,7 @@
 
 {{- $xr := getCompositeResource . }}
 {{- $spec := $xr.spec | default dict }}
+{{- $status := $xr.status | default dict }}
 {{- $metadata := $xr.metadata | default dict }}
 
 # ==============================================================================
@@ -56,6 +57,9 @@
 # Cross-namespace bridging gate — render the source-ns VolumeSnapshot only when
 # the source is in a different namespace from the branch.
 {{- $crossNamespace := ne $sourceNamespace $namespace }}
+{{- $branchIdentity := printf "%d:%s%d:%s" (len $namespace) $namespace (len $name) $name }}
+{{- $branchIdentityHash := $branchIdentity | sha256sum | trunc 16 }}
+{{- $branchSnapshotContentName := printf "%.40s-%.40s-%s-content" $namespace $name $branchIdentityHash }}
 
 # ==============================================================================
 # Branch sizing
@@ -74,9 +78,38 @@
 }}
 
 # ==============================================================================
+# Recovery credentials
+# ==============================================================================
+{{- $appSpec := $spec.app | default dict }}
+{{- $appSecretName := $appSpec.secretName | default "" }}
+{{- $appCnpgManagedSecret := not $appSecretName }}
+{{- if $appCnpgManagedSecret }}
+  {{- $appSecretName = printf "%s-app" $name }}
+{{- end }}
+{{- $app := dict
+  "role" ($appSpec.role | default "app")
+  "database" ($appSpec.database | default "app")
+  "secretName" $appSecretName
+  "cnpgManagedSecret" $appCnpgManagedSecret
+}}
+
+{{- $superuserSpec := $spec.superuser | default dict }}
+{{- $superuserEnabled := false }}
+{{- if hasKey $superuserSpec "enabled" }}
+  {{- $superuserEnabled = $superuserSpec.enabled }}
+{{- end }}
+{{- $superuserProvidedSecretName := $superuserSpec.secretName | default "" }}
+{{- $superuserSecretName := $superuserProvidedSecretName | default (printf "%s-superuser" $name) }}
+{{- $superuser := dict
+  "enabled" $superuserEnabled
+  "secretName" $superuserSecretName
+  "providedSecretName" $superuserProvidedSecretName
+}}
+
+# ==============================================================================
 # Postgres version — must match source's major for snapshot recovery to
-# succeed. No default: omit `imageName` downstream so CNPG falls back to its
-# operator default (matches the chart's pinned PG when source tracks it).
+# succeed. No default: downstream inherits the exact image admitted on the
+# observed source Cluster, avoiding drift when the CNPG default major changes.
 # ==============================================================================
 {{- $pgSpec := $spec.postgresql | default dict }}
 {{- $postgresql := dict
@@ -127,11 +160,15 @@
   "kubernetesProviderConfigRef" $k8sProviderConfigRef
   "source" $source
   "crossNamespace" $crossNamespace
+  "branchSnapshotContentName" $branchSnapshotContentName
   "branch" $branch
+  "app" $app
+  "superuser" $superuser
   "postgresql" $postgresql
   "scaleToZero" $scaleToZero
   "ttl" $ttl
   "cnpg" $cnpg
+  "recoveryImageName" ($status.recoveryImageName | default "")
   "observed" (dict)
   "status" (dict)
 }}

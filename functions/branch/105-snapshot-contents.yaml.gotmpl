@@ -1,0 +1,108 @@
+# code: language=yaml
+#
+# Cross-namespace snapshot import.
+#
+# VolumeSnapshotContent and VolumeSnapshot bind one-to-one. The content
+# dynamically created for the source namespace cannot also bind to the branch
+# namespace. Observe its CSI snapshotHandle, then create a distinct static
+# VolumeSnapshotContent whose volumeSnapshotRef targets the branch snapshot.
+# The imported content uses Retain so deleting it never deletes the shared
+# physical snapshot; the source snapshot remains responsible for that cleanup.
+#
+
+{{- if and $state.crossNamespace (ne $state.observed.sourceSnapshot.content "") }}
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-source-snapshot-content
+  annotations:
+    {{ setResourceNameAnnotation "source-snapshot-content" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies:
+    - Observe
+  readiness:
+    policy: DeriveFromCelQuery
+    celQuery: has(object.status) && has(object.status.readyToUse) && object.status.readyToUse == true
+  forProvider:
+    manifest:
+      apiVersion: snapshot.storage.k8s.io/v1
+      kind: VolumeSnapshotContent
+      metadata:
+        name: {{ $state.observed.sourceSnapshot.content }}
+  providerConfigRef:
+    name: {{ $state.kubernetesProviderConfigRef.name }}
+    kind: {{ $state.kubernetesProviderConfigRef.kind }}
+{{- end }}
+
+{{- $sourceContent := $state.observed.sourceSnapshotContent }}
+{{- if and $state.crossNamespace (ne $sourceContent.handle "") (ne $sourceContent.driver "") }}
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-branch-snapshot-content
+  annotations:
+    {{ setResourceNameAnnotation "branch-snapshot-content" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  readiness:
+    policy: DeriveFromCelQuery
+    celQuery: has(object.status) && has(object.status.readyToUse) && object.status.readyToUse == true
+  forProvider:
+    manifest:
+      apiVersion: snapshot.storage.k8s.io/v1
+      kind: VolumeSnapshotContent
+      metadata:
+        name: {{ $state.branchSnapshotContentName }}
+        labels: {{ $state.labels | toJson }}
+      spec:
+        deletionPolicy: Retain
+        driver: {{ $sourceContent.driver }}
+        source:
+          snapshotHandle: {{ $sourceContent.handle | quote }}
+        {{- if $sourceContent.sourceVolumeMode }}
+        sourceVolumeMode: {{ $sourceContent.sourceVolumeMode }}
+        {{- end }}
+        {{- if $sourceContent.className }}
+        volumeSnapshotClassName: {{ $sourceContent.className }}
+        {{- end }}
+        volumeSnapshotRef:
+          apiVersion: snapshot.storage.k8s.io/v1
+          kind: VolumeSnapshot
+          name: {{ $state.name }}-snap
+          namespace: {{ $state.namespace }}
+  providerConfigRef:
+    name: {{ $state.kubernetesProviderConfigRef.name }}
+    kind: {{ $state.kubernetesProviderConfigRef.kind }}
+{{- end }}
+
+{{- $observed := $.observed.resources | default dict }}
+{{- if and
+  $state.crossNamespace
+  (hasKey $observed "branch-snapshot-content")
+  (hasKey $observed "branch-snapshot")
+}}
+---
+apiVersion: protection.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  name: {{ $state.name }}-delete-branch-snapshot-before-branch-content
+  annotations:
+    {{ setResourceNameAnnotation "usage-branch-snapshot-branch-content" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  replayDeletion: true
+  of:
+    apiVersion: kubernetes.m.crossplane.io/v1alpha1
+    kind: Object
+    resourceRef:
+      name: {{ $state.name }}-branch-snapshot-content
+  by:
+    apiVersion: kubernetes.m.crossplane.io/v1alpha1
+    kind: Object
+    resourceRef:
+      name: {{ $state.name }}-branch-snapshot
+{{- end }}

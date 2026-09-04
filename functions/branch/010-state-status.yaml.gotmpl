@@ -11,8 +11,52 @@
 {{- $clusterResource := $clusterEntry.resource | default dict }}
 {{- $clusterAtProvider := (($clusterResource.status | default dict).atProvider | default dict) }}
 {{- $clusterManifest := $clusterAtProvider.manifest | default dict }}
+{{- $clusterSpec := $clusterManifest.spec | default dict }}
 {{- $clusterStatus := $clusterManifest.status | default dict }}
 {{- $clusterPhase := $clusterStatus.phase | default "" }}
+{{- $clusterImageName := $clusterSpec.imageName | default "" }}
+{{- $clusterObjectReady := false }}
+{{- range (($clusterResource.status | default dict).conditions | default list) }}
+  {{- if and (eq .type "Ready") (eq .status "True") }}
+    {{- $clusterObjectReady = true }}
+  {{- end }}
+{{- end }}
+{{- $clusterReady := eq $clusterPhase "Cluster in healthy state" }}
+
+# The source must be healthy before either same- or cross-namespace snapshot
+# creation. A source Object that merely exists is not sufficient: CNPG may
+# still be initializing its data directory and primary identity.
+{{- $sourceClusterEntry := get $observed "source-cluster" | default dict }}
+{{- $sourceClusterResource := $sourceClusterEntry.resource | default dict }}
+{{- $sourceClusterAtProvider := (($sourceClusterResource.status | default dict).atProvider | default dict) }}
+{{- $sourceClusterManifest := $sourceClusterAtProvider.manifest | default dict }}
+{{- $sourceClusterSpec := $sourceClusterManifest.spec | default dict }}
+{{- $sourceClusterStatus := $sourceClusterManifest.status | default dict }}
+{{- $sourceClusterPhase := $sourceClusterStatus.phase | default "" }}
+{{- $sourceClusterImageName := $sourceClusterSpec.imageName | default "" }}
+{{- $sourceClusterObjectReady := false }}
+{{- range (($sourceClusterResource.status | default dict).conditions | default list) }}
+  {{- if and (eq .type "Ready") (eq .status "True") }}
+    {{- $sourceClusterObjectReady = true }}
+  {{- end }}
+{{- end }}
+{{- $sourceClusterReady := and $sourceClusterObjectReady (eq $sourceClusterPhase "Cluster in healthy state") }}
+
+# Latch the recovery image into XR status. An explicit version always wins.
+# Otherwise retain the image already admitted for this branch, recover it from
+# an existing branch Cluster for upgrade compatibility, and consult the live
+# source only before the first branch Cluster is created. This prevents source
+# outages or later source upgrades from deleting/upgrading a recovered branch.
+{{- $recoveryImageName := $state.recoveryImageName | default "" }}
+{{- if $state.postgresql.version }}
+  {{- $recoveryImageName = printf "ghcr.io/cloudnative-pg/postgresql:%s" $state.postgresql.version }}
+{{- else if not $recoveryImageName }}
+  {{- $recoveryImageName = $clusterImageName }}
+{{- end }}
+{{- if and (not $recoveryImageName) $sourceClusterImageName }}
+  {{- $recoveryImageName = $sourceClusterImageName }}
+{{- end }}
+{{- $state = set $state "recoveryImageName" $recoveryImageName }}
 
 # Read the bound VolumeSnapshotContent name. Two paths:
 #   - same-namespace: only `branch-snapshot` exists (it references the source
@@ -30,6 +74,12 @@
 {{- $branchManifest := $branchAtProvider.manifest | default dict }}
 {{- $branchStatus := $branchManifest.status | default dict }}
 {{- $branchContent := $branchStatus.boundVolumeSnapshotContentName | default "" }}
+{{- $branchReady := false }}
+{{- range (($branchResource.status | default dict).conditions | default list) }}
+  {{- if and (eq .type "Ready") (eq .status "True") }}
+    {{- $branchReady = true }}
+  {{- end }}
+{{- end }}
 
 {{- $snapEntrySource := get $observed "source-snapshot" | default dict }}
 {{- $sourceResource := $snapEntrySource.resource | default dict }}
@@ -37,6 +87,71 @@
 {{- $sourceManifest := $sourceAtProvider.manifest | default dict }}
 {{- $sourceStatus := $sourceManifest.status | default dict }}
 {{- $sourceContent := $sourceStatus.boundVolumeSnapshotContentName | default "" }}
+{{- $sourceReady := false }}
+{{- range (($sourceResource.status | default dict).conditions | default list) }}
+  {{- if and (eq .type "Ready") (eq .status "True") }}
+    {{- $sourceReady = true }}
+  {{- end }}
+{{- end }}
+
+# Cross-namespace static binding needs two distinct VolumeSnapshotContent
+# resources. Observe the dynamically-created source content to obtain its CSI
+# snapshotHandle, then import that handle into a branch-bound content object.
+{{- $sourceContentEntry := get $observed "source-snapshot-content" | default dict }}
+{{- $sourceContentResource := $sourceContentEntry.resource | default dict }}
+{{- $sourceContentAtProvider := (($sourceContentResource.status | default dict).atProvider | default dict) }}
+{{- $sourceContentManifest := $sourceContentAtProvider.manifest | default dict }}
+{{- $sourceContentSpec := $sourceContentManifest.spec | default dict }}
+{{- $sourceContentSource := $sourceContentSpec.source | default dict }}
+{{- $sourceSnapshotHandle := $sourceContentSource.snapshotHandle | default "" }}
+{{- $sourceSnapshotDriver := $sourceContentSpec.driver | default "" }}
+{{- $sourceSnapshotVolumeMode := $sourceContentSpec.sourceVolumeMode | default "" }}
+{{- $sourceSnapshotClassName := $sourceContentSpec.volumeSnapshotClassName | default "" }}
+{{- $sourceContentReady := false }}
+{{- range (($sourceContentResource.status | default dict).conditions | default list) }}
+  {{- if and (eq .type "Ready") (eq .status "True") }}
+    {{- $sourceContentReady = true }}
+  {{- end }}
+{{- end }}
+
+{{- $branchContentEntry := get $observed "branch-snapshot-content" | default dict }}
+{{- $branchContentResource := $branchContentEntry.resource | default dict }}
+{{- $branchContentReady := false }}
+{{- range (($branchContentResource.status | default dict).conditions | default list) }}
+  {{- if and (eq .type "Ready") (eq .status "True") }}
+    {{- $branchContentReady = true }}
+  {{- end }}
+{{- end }}
+
+# Deletion-order locks are part of readiness. This keeps the XR from reporting
+# fully ready during the reconcile where a healthy database exists but its
+# Usage protections have only just been emitted.
+{{- $usageClusterSnapshotEntry := get $observed "usage-cnpg-cluster-branch-snapshot" | default dict }}
+{{- $usageClusterSnapshotResource := $usageClusterSnapshotEntry.resource | default dict }}
+{{- $usageClusterSnapshotReady := false }}
+{{- range (($usageClusterSnapshotResource.status | default dict).conditions | default list) }}
+  {{- if and (eq .type "Ready") (eq .status "True") }}
+    {{- $usageClusterSnapshotReady = true }}
+  {{- end }}
+{{- end }}
+
+{{- $usageSnapshotContentEntry := get $observed "usage-branch-snapshot-branch-content" | default dict }}
+{{- $usageSnapshotContentResource := $usageSnapshotContentEntry.resource | default dict }}
+{{- $usageSnapshotContentReady := false }}
+{{- range (($usageSnapshotContentResource.status | default dict).conditions | default list) }}
+  {{- if and (eq .type "Ready") (eq .status "True") }}
+    {{- $usageSnapshotContentReady = true }}
+  {{- end }}
+{{- end }}
+
+{{- $usageContentSourceEntry := get $observed "usage-branch-content-source-snapshot" | default dict }}
+{{- $usageContentSourceResource := $usageContentSourceEntry.resource | default dict }}
+{{- $usageContentSourceReady := false }}
+{{- range (($usageContentSourceResource.status | default dict).conditions | default list) }}
+  {{- if and (eq .type "Ready") (eq .status "True") }}
+    {{- $usageContentSourceReady = true }}
+  {{- end }}
+{{- end }}
 
 {{- $snapContent := $branchContent }}
 {{- if not $branchContent }}
@@ -44,13 +159,58 @@
 {{- end }}
 
 {{- $state = set $state "observed" (dict
-  "cluster" (dict "phase" $clusterPhase)
+  "cluster" (dict
+    "ready" $clusterReady
+    "objectReady" $clusterObjectReady
+    "phase" $clusterPhase
+  )
+  "sourceCluster" (dict
+    "ready" $sourceClusterReady
+    "objectReady" $sourceClusterObjectReady
+    "phase" $sourceClusterPhase
+    "imageName" $sourceClusterImageName
+  )
+  "sourceSnapshot" (dict
+    "ready" $sourceReady
+    "content" $sourceContent
+  )
+  "sourceSnapshotContent" (dict
+    "ready" $sourceContentReady
+    "handle" $sourceSnapshotHandle
+    "driver" $sourceSnapshotDriver
+    "sourceVolumeMode" $sourceSnapshotVolumeMode
+    "className" $sourceSnapshotClassName
+  )
+  "branchSnapshotContent" (dict
+    "ready" $branchContentReady
+  )
+  "branchSnapshot" (dict
+    "ready" $branchReady
+    "content" $branchContent
+  )
   "snapshotContent" $snapContent
 ) }}
 
+{{- $ready := and
+  $clusterObjectReady
+  $clusterReady
+  $branchReady
+  $usageClusterSnapshotReady
+  (or
+    (not $state.crossNamespace)
+    (and
+      $sourceReady
+      $sourceContentReady
+      $branchContentReady
+      $usageSnapshotContentReady
+      $usageContentSourceReady
+    )
+  )
+}}
 {{- $state = set $state "status" (dict
-  "ready" false
+  "ready" $ready
   "bootstrapPhase" $clusterPhase
   "bootstrapMethod" "volumeSnapshot"
   "sourceSnapshotContent" $snapContent
+  "recoveryImageName" $recoveryImageName
 ) }}

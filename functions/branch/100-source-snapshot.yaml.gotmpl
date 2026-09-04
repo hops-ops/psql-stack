@@ -6,8 +6,9 @@
 # we need a VolumeSnapshot in the source's namespace (because
 # VolumeSnapshot.spec.source.persistentVolumeClaimName is same-namespace
 # only). The snapshot-controller binds this to a cluster-scoped
-# VolumeSnapshotContent, which the branch-ns VolumeSnapshot then references
-# statically (in 110-branch-snapshot).
+# VolumeSnapshotContent. The composition observes its CSI snapshotHandle and
+# imports that handle through a distinct branch-bound VolumeSnapshotContent
+# before rendering the branch namespace's VolumeSnapshot.
 #
 # For same-namespace branching, this template is skipped — the branch-ns
 # snapshot references the source PVC directly.
@@ -23,7 +24,7 @@
 #
 
 {{- $source := $state.source }}
-{{- if $state.crossNamespace }}
+{{- if and $state.crossNamespace $state.observed.sourceCluster.ready }}
 {{- $sourceSnapName := printf "%s-%s-src" $state.namespace $state.name }}
 ---
 apiVersion: kubernetes.m.crossplane.io/v1alpha1
@@ -35,6 +36,9 @@ metadata:
   labels: {{ $state.labels | toJson }}
 spec:
   managementPolicies: {{ $state.managementPolicies | toJson }}
+  readiness:
+    policy: DeriveFromCelQuery
+    celQuery: has(object.status) && has(object.status.readyToUse) && object.status.readyToUse == true
   forProvider:
     manifest:
       apiVersion: snapshot.storage.k8s.io/v1
@@ -50,4 +54,32 @@ spec:
   providerConfigRef:
     name: {{ $state.kubernetesProviderConfigRef.name }}
     kind: {{ $state.kubernetesProviderConfigRef.kind }}
+{{- end }}
+
+{{- $observed := $.observed.resources | default dict }}
+{{- if and
+  $state.crossNamespace
+  (hasKey $observed "source-snapshot")
+  (hasKey $observed "branch-snapshot-content")
+}}
+---
+apiVersion: protection.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  name: {{ $state.name }}-delete-branch-content-before-source-snapshot
+  annotations:
+    {{ setResourceNameAnnotation "usage-branch-content-source-snapshot" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  replayDeletion: true
+  of:
+    apiVersion: kubernetes.m.crossplane.io/v1alpha1
+    kind: Object
+    resourceRef:
+      name: {{ $state.name }}-source-snapshot
+  by:
+    apiVersion: kubernetes.m.crossplane.io/v1alpha1
+    kind: Object
+    resourceRef:
+      name: {{ $state.name }}-branch-snapshot-content
 {{- end }}

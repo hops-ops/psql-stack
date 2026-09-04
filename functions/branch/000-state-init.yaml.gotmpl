@@ -5,6 +5,7 @@
 
 {{- $xr := getCompositeResource . }}
 {{- $spec := $xr.spec | default dict }}
+{{- $status := $xr.status | default dict }}
 {{- $metadata := $xr.metadata | default dict }}
 
 # ==============================================================================
@@ -167,6 +168,7 @@
   "scaleToZero" $scaleToZero
   "ttl" $ttl
   "cnpg" $cnpg
+  "recoveryImageName" ($status.recoveryImageName | default "")
   "observed" (dict)
   "status" (dict)
 }}

@@ -79,7 +79,12 @@ spec:
     kind: {{ $state.kubernetesProviderConfigRef.kind }}
 {{- end }}
 
-{{- if and $state.crossNamespace $state.observed.branchSnapshotContent.ready $state.observed.branchSnapshot.ready }}
+{{- $observed := $.observed.resources | default dict }}
+{{- if and
+  $state.crossNamespace
+  (hasKey $observed "branch-snapshot-content")
+  (hasKey $observed "branch-snapshot")
+}}
 ---
 apiVersion: protection.crossplane.io/v1beta1
 kind: Usage

@@ -12,6 +12,7 @@ status:
   bootstrapPhase: {{ $state.status.bootstrapPhase | quote }}
   bootstrapMethod: {{ $state.status.bootstrapMethod | quote }}
   sourceSnapshotContent: {{ $state.status.sourceSnapshotContent | quote }}
+  recoveryImageName: {{ $state.status.recoveryImageName | quote }}
 {{ if not $state.cnpg.overrideAllValues }}
   app:
     secretName: {{ $state.app.secretName | quote }}

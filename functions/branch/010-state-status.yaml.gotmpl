@@ -11,8 +11,10 @@
 {{- $clusterResource := $clusterEntry.resource | default dict }}
 {{- $clusterAtProvider := (($clusterResource.status | default dict).atProvider | default dict) }}
 {{- $clusterManifest := $clusterAtProvider.manifest | default dict }}
+{{- $clusterSpec := $clusterManifest.spec | default dict }}
 {{- $clusterStatus := $clusterManifest.status | default dict }}
 {{- $clusterPhase := $clusterStatus.phase | default "" }}
+{{- $clusterImageName := $clusterSpec.imageName | default "" }}
 {{- $clusterObjectReady := false }}
 {{- range (($clusterResource.status | default dict).conditions | default list) }}
   {{- if and (eq .type "Ready") (eq .status "True") }}
@@ -39,6 +41,22 @@
   {{- end }}
 {{- end }}
 {{- $sourceClusterReady := and $sourceClusterObjectReady (eq $sourceClusterPhase "Cluster in healthy state") }}
+
+# Latch the recovery image into XR status. An explicit version always wins.
+# Otherwise retain the image already admitted for this branch, recover it from
+# an existing branch Cluster for upgrade compatibility, and consult the live
+# source only before the first branch Cluster is created. This prevents source
+# outages or later source upgrades from deleting/upgrading a recovered branch.
+{{- $recoveryImageName := $state.recoveryImageName | default "" }}
+{{- if $state.postgresql.version }}
+  {{- $recoveryImageName = printf "ghcr.io/cloudnative-pg/postgresql:%s" $state.postgresql.version }}
+{{- else if not $recoveryImageName }}
+  {{- $recoveryImageName = $clusterImageName }}
+{{- end }}
+{{- if and (not $recoveryImageName) $sourceClusterImageName }}
+  {{- $recoveryImageName = $sourceClusterImageName }}
+{{- end }}
+{{- $state = set $state "recoveryImageName" $recoveryImageName }}
 
 # Read the bound VolumeSnapshotContent name. Two paths:
 #   - same-namespace: only `branch-snapshot` exists (it references the source
@@ -174,7 +192,6 @@
 ) }}
 
 {{- $ready := and
-  $sourceClusterReady
   $clusterObjectReady
   $clusterReady
   $branchReady
@@ -195,4 +212,5 @@
   "bootstrapPhase" $clusterPhase
   "bootstrapMethod" "volumeSnapshot"
   "sourceSnapshotContent" $snapContent
+  "recoveryImageName" $recoveryImageName
 ) }}

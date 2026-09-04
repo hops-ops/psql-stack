@@ -1,0 +1,62 @@
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: pr-142-source-cluster
+  namespace: default
+  annotations:
+    crossplane.io/composition-resource-name: source-cluster
+    gotemplating.fn.crossplane.io/composition-resource-name: source-cluster
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: pr-142-branch-snapshot
+  namespace: default
+  annotations:
+    crossplane.io/composition-resource-name: branch-snapshot
+    gotemplating.fn.crossplane.io/composition-resource-name: branch-snapshot
+status:
+  conditions:
+    - type: Ready
+      status: "True"
+  atProvider:
+    manifest:
+      status:
+        boundVolumeSnapshotContentName: snapcontent-ready
+        readyToUse: true
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: pr-142-cnpg-cluster
+  namespace: default
+  annotations:
+    crossplane.io/composition-resource-name: cnpg-cluster
+    gotemplating.fn.crossplane.io/composition-resource-name: cnpg-cluster
+status:
+  conditions:
+    - type: Ready
+      status: "True"
+  atProvider:
+    manifest:
+      spec:
+        imageName: ghcr.io/cloudnative-pg/postgresql:17
+      status:
+        phase: Cluster in healthy state
+---
+apiVersion: protection.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  name: pr-142-delete-cnpg-cluster-before-branch-snapshot
+  namespace: default
+  annotations:
+    crossplane.io/composition-resource-name: usage-cnpg-cluster-branch-snapshot
+    gotemplating.fn.crossplane.io/composition-resource-name: usage-cnpg-cluster-branch-snapshot
+status:
+  conditions:
+    - type: Ready
+      status: "True"

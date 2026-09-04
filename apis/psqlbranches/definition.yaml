@@ -249,6 +249,9 @@ spec:
               sourceSnapshotContent:
                 description: Name of the cluster-scoped VolumeSnapshotContent backing this branch (for cross-ns bridging visibility).
                 type: string
+              recoveryImageName:
+                description: Exact PostgreSQL image admitted for branch recovery and retained independently of later source availability.
+                type: string
               expiresAt:
                 description: Computed deletion deadline when ttl.enabled is true.
                 type: string

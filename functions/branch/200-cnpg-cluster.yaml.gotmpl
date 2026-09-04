@@ -9,15 +9,21 @@
 #
 
 {{- $cnpg := $state.cnpg }}
-{{- $sourceImageName := $state.observed.sourceCluster.imageName | default "" }}
+{{- $recoveryImageName := $state.recoveryImageName | default "" }}
 {{- $hasImageContract := or
   $cnpg.overrideAllValues
-  $state.postgresql.version
-  $sourceImageName
+  $recoveryImageName
 }}
+{{- $clusterExists := hasKey ($.observed.resources | default dict) "cnpg-cluster" }}
 {{- $render := and
-  (ne $state.observed.branchSnapshot.content "")
   $hasImageContract
+  (or
+    $clusterExists
+    (and
+      $state.observed.branchSnapshot.ready
+      (ne $state.observed.branchSnapshot.content "")
+    )
+  )
 }}
 
 {{- $clusterAnnotations := dict }}
@@ -93,15 +99,11 @@ spec:
             "limits" (dict "memory" "512Mi")
           )
         }}
-        {{- /* Snapshot recovery requires the same PostgreSQL major. An explicit
-               version remains an escape hatch; otherwise copy the exact image
-               admitted on the observed source Cluster. Never fall through to
-               CNPG's current operator default, which may have a newer major. */}}
-        {{- if $state.postgresql.version }}
-          {{- $_ := set $clusterSpec "imageName" (printf "ghcr.io/cloudnative-pg/postgresql:%s" $state.postgresql.version) }}
-        {{- else }}
-          {{- $_ := set $clusterSpec "imageName" $sourceImageName }}
-        {{- end }}
+        {{- /* Snapshot recovery requires the same PostgreSQL major. The state
+               extractor latches either the explicit version or the source's
+               exact admitted image into XR status, then recovers it from an
+               existing branch Cluster if needed. Never use CNPG's default. */}}
+        {{- $_ := set $clusterSpec "imageName" $recoveryImageName }}
         {{- if $state.superuser.enabled }}
           {{- $_ := set $clusterSpec "enableSuperuserAccess" true }}
           {{- if $state.superuser.providedSecretName }}

@@ -56,7 +56,11 @@ spec:
     kind: {{ $state.kubernetesProviderConfigRef.kind }}
 {{- end }}
 
-{{- if and $state.observed.branchSnapshot.ready $state.observed.cluster.objectReady }}
+{{- $observed := $.observed.resources | default dict }}
+{{- if and
+  (hasKey $observed "branch-snapshot")
+  (hasKey $observed "cnpg-cluster")
+}}
 ---
 apiVersion: protection.crossplane.io/v1beta1
 kind: Usage

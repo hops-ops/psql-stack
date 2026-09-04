@@ -139,6 +139,38 @@ _ready_source_cluster = lambda namespace, name {
 }
 }
 
+_unready_object = lambda namespace, name, resource_name {
+  {
+    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+    kind = "Object"
+    metadata = {
+        name = name
+        namespace = namespace
+        annotations = {
+            "crossplane.io/composition-resource-name" = resource_name
+            "gotemplating.fn.crossplane.io/composition-resource-name" = resource_name
+        }
+    }
+    status.conditions = [{type = "Ready", status = "False"}]
+  }
+}
+
+_ready_usage = lambda namespace, name, resource_name {
+  {
+    apiVersion = "protection.crossplane.io/v1beta1"
+    kind = "Usage"
+    metadata = {
+        name = name
+        namespace = namespace
+        annotations = {
+            "crossplane.io/composition-resource-name" = resource_name
+            "gotemplating.fn.crossplane.io/composition-resource-name" = resource_name
+        }
+    }
+    status.conditions = [{type = "Ready", status = "True"}]
+  }
+}
+
 _items = [
     # ==========================================================================
     # A branch starts by observing its source CNPG Cluster. Snapshot resources
@@ -916,8 +948,7 @@ _items = [
     }
 
     # ==========================================================================
-    # All three Usage locks appear only after their endpoints are observed
-    # Ready. The staged observed fixture separately exercises final status.
+    # All three Usage locks appear after their endpoints are observed.
     # ==========================================================================
     metav1alpha1.CompositionTest {
         metadata.name = "ready-cross-namespace-branch-locks-deletion-order"
@@ -958,6 +989,128 @@ _items = [
                     metadata.name = "br-ready-delete-cnpg-cluster-before-branch-snapshot"
                 }
             ]
+        }
+    }
+
+    # ==========================================================================
+    # Usage resources must remain desired while their endpoints exist even when
+    # those endpoints become unready during deletion. Readiness-gated Usages
+    # would disappear precisely when the deletion lock is needed.
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "deletion-locks-survive-unready-endpoints"
+        spec = {
+            compositionPath = "apis/psqlbranches/composition.yaml"
+            xrdPath = "apis/psqlbranches/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLBranch {
+                metadata = {name = "br-deleting", namespace = "preview-pr-1"}
+                spec = {
+                    clusterName = "production"
+                    source = {name = "source", namespace = "staging"}
+                }
+            }
+            observedResources = [
+                _unready_object("preview-pr-1", "br-deleting-source-snapshot", "source-snapshot"),
+                _unready_object("preview-pr-1", "br-deleting-branch-snapshot-content", "branch-snapshot-content"),
+                _unready_object("preview-pr-1", "br-deleting-branch-snapshot", "branch-snapshot"),
+                _unready_object("preview-pr-1", "br-deleting-cnpg-cluster", "cnpg-cluster"),
+            ]
+            assertResources = [
+                {
+                    apiVersion = "protection.crossplane.io/v1beta1"
+                    kind = "Usage"
+                    metadata.name = "br-deleting-delete-branch-content-before-source-snapshot"
+                }
+                {
+                    apiVersion = "protection.crossplane.io/v1beta1"
+                    kind = "Usage"
+                    metadata.name = "br-deleting-delete-branch-snapshot-before-branch-content"
+                }
+                {
+                    apiVersion = "protection.crossplane.io/v1beta1"
+                    kind = "Usage"
+                    metadata.name = "br-deleting-delete-cnpg-cluster-before-branch-snapshot"
+                }
+            ]
+        }
+    }
+
+    # ==========================================================================
+    # Once admitted, the recovery image is recoverable from the existing branch
+    # Cluster and remains desired even when both source and snapshot observations
+    # are temporarily absent. This prevents composition from deleting the DB.
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "existing-branch-survives-source-observation-loss"
+        spec = {
+            compositionPath = "apis/psqlbranches/composition.yaml"
+            xrdPath = "apis/psqlbranches/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLBranch {
+                metadata = {name = "br-survivor", namespace = "preview-pr-1"}
+                spec = {
+                    clusterName = "production"
+                    source = {name = "source", namespace = "staging"}
+                }
+            }
+            observedResources = [{
+                apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                kind = "Object"
+                metadata = {
+                    name = "br-survivor-cnpg-cluster"
+                    namespace = "preview-pr-1"
+                    annotations = {
+                        "crossplane.io/composition-resource-name" = "cnpg-cluster"
+                        "gotemplating.fn.crossplane.io/composition-resource-name" = "cnpg-cluster"
+                    }
+                }
+                status = {
+                    conditions = [{type = "Ready", status = "False"}]
+                    atProvider.manifest.spec.imageName = "ghcr.io/cloudnative-pg/postgresql:17"
+                }
+            }]
+            assertResources = [{
+                apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                kind = "Object"
+                metadata.name = "br-survivor-cnpg-cluster"
+                spec.forProvider.manifest.spec.imageName = "ghcr.io/cloudnative-pg/postgresql:17"
+            }]
+        }
+    }
+
+    # ==========================================================================
+    # A recovered healthy branch remains application-ready if the source later
+    # becomes unhealthy. Source health gates snapshot staging, not steady state.
+    # ==========================================================================
+    metav1alpha1.CompositionTest {
+        metadata.name = "healthy-branch-ready-with-unavailable-source"
+        spec = {
+            compositionPath = "apis/psqlbranches/composition.yaml"
+            xrdPath = "apis/psqlbranches/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLBranch {
+                metadata = {name = "br-independent", namespace = "default"}
+                spec = {
+                    clusterName = "production"
+                    source = {name = "source"}
+                }
+            }
+            observedResources = [
+                _unready_object("default", "br-independent-source-cluster", "source-cluster"),
+                _ready_branch_snapshot("default", "br-independent-branch-snapshot"),
+                _ready_cnpg_cluster("default", "br-independent-cnpg-cluster"),
+                _ready_usage("default", "br-independent-delete-cnpg-cluster-before-branch-snapshot", "usage-cnpg-cluster-branch-snapshot"),
+            ]
+            assertResources = [{
+                apiVersion = "hops.ops.com.ai/v1alpha1"
+                kind = "PSQLBranch"
+                metadata.name = "br-independent"
+                status.ready = True
+            }]
         }
     }
 ]

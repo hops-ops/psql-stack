@@ -288,7 +288,9 @@ _items = [
 
     # ==========================================================================
     # Cross-namespace, second reconcile: once the source snapshot is bound,
-    # the branch snapshot is rendered with a non-empty static content ref.
+    # the branch snapshot is rendered with a non-empty static content ref. The
+    # composite must remain pipeline-unready while those new resources are
+    # absent; otherwise auto-ready stalls the staged composition here.
     # ==========================================================================
     metav1alpha1.CompositionTest {
         metadata.name = "cross-ns-imports-source-handle-into-branch-content"
@@ -347,6 +349,19 @@ _items = [
                     kind = "Object"
                     metadata.name = "br-x-branch-snapshot"
                     spec.forProvider.manifest.spec.source.volumeSnapshotContentName = "preview-pr-1-br-x-6a6f418e5232e5cb-content"
+                }
+                {
+                    apiVersion = "hops.ops.com.ai/v1alpha1"
+                    kind = "PSQLBranch"
+                    metadata.name = "br-x"
+                    status = {
+                        ready = False
+                        conditions = [
+                            {type = "Responsive", status = "True"}
+                            {type = "Synced", status = "True"}
+                            {type = "Ready", status = "False"}
+                        ]
+                    }
                 }
             ]
         }

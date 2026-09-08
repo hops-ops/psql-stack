@@ -7,6 +7,9 @@
 ---
 apiVersion: {{ $xr.apiVersion }}
 kind: {{ $xr.kind }}
+metadata:
+  annotations:
+    gotemplating.fn.crossplane.io/ready: {{ ternary "True" "False" $state.status.ready | quote }}
 status:
   ready: {{ $state.status.ready }}
   bootstrapPhase: {{ $state.status.bootstrapPhase | quote }}

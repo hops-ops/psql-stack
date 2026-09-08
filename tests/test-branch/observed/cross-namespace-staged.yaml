@@ -1,0 +1,59 @@
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: pr-142-source-cluster
+  namespace: preview-pr-142
+  annotations:
+    crossplane.io/composition-resource-name: source-cluster
+    gotemplating.fn.crossplane.io/composition-resource-name: source-cluster
+status:
+  conditions:
+    - type: Ready
+      status: "True"
+  atProvider:
+    manifest:
+      spec:
+        imageName: ghcr.io/cloudnative-pg/postgresql:17
+      status:
+        phase: Cluster in healthy state
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: pr-142-source-snapshot
+  namespace: preview-pr-142
+  annotations:
+    crossplane.io/composition-resource-name: source-snapshot
+    gotemplating.fn.crossplane.io/composition-resource-name: source-snapshot
+status:
+  conditions:
+    - type: Ready
+      status: "True"
+  atProvider:
+    manifest:
+      status:
+        boundVolumeSnapshotContentName: source-content
+        readyToUse: true
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: pr-142-source-snapshot-content
+  namespace: preview-pr-142
+  annotations:
+    crossplane.io/composition-resource-name: source-snapshot-content
+    gotemplating.fn.crossplane.io/composition-resource-name: source-snapshot-content
+status:
+  conditions:
+    - type: Ready
+      status: "True"
+  atProvider:
+    manifest:
+      spec:
+        driver: ebs.csi.eks.amazonaws.com
+        source:
+          snapshotHandle: snap-0123456789abcdef0
+        sourceVolumeMode: Filesystem
+        volumeSnapshotClassName: psql
+      status:
+        readyToUse: true

@@ -52,8 +52,9 @@ status:
       spec:
         driver: ebs.csi.eks.amazonaws.com
         source:
-          snapshotHandle: snap-0123456789abcdef0
+          volumeHandle: vol-0123456789abcdef0
         sourceVolumeMode: Filesystem
         volumeSnapshotClassName: psql
       status:
+        snapshotHandle: snap-0123456789abcdef0
         readyToUse: true

@@ -103,7 +103,11 @@
 {{- $sourceContentManifest := $sourceContentAtProvider.manifest | default dict }}
 {{- $sourceContentSpec := $sourceContentManifest.spec | default dict }}
 {{- $sourceContentSource := $sourceContentSpec.source | default dict }}
-{{- $sourceSnapshotHandle := $sourceContentSource.snapshotHandle | default "" }}
+{{- $sourceContentStatus := $sourceContentManifest.status | default dict }}
+# Dynamic content identifies the source volume in spec.source.volumeHandle;
+# the CSI snapshot ID is published in status.snapshotHandle. Pre-provisioned
+# content can supply that ID in spec.source.snapshotHandle before status exists.
+{{- $sourceSnapshotHandle := $sourceContentStatus.snapshotHandle | default $sourceContentSource.snapshotHandle | default "" }}
 {{- $sourceSnapshotDriver := $sourceContentSpec.driver | default "" }}
 {{- $sourceSnapshotVolumeMode := $sourceContentSpec.sourceVolumeMode | default "" }}
 {{- $sourceSnapshotClassName := $sourceContentSpec.volumeSnapshotClassName | default "" }}

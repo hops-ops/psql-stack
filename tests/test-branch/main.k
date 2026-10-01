@@ -79,6 +79,36 @@ _ready_source_snapshot_content = lambda namespace, name {
 }
 }
 
+_ready_dynamic_source_snapshot_content = lambda namespace, name {
+  {
+    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+    kind = "Object"
+    metadata = {
+        name = name
+        namespace = namespace
+        annotations = {
+            "crossplane.io/composition-resource-name" = "source-snapshot-content"
+            "gotemplating.fn.crossplane.io/composition-resource-name" = "source-snapshot-content"
+        }
+    }
+    status = {
+        conditions = [{type = "Ready", status = "True"}]
+        atProvider.manifest = {
+            spec = {
+                driver = "ebs.csi.eks.amazonaws.com"
+                source.volumeHandle = "vol-0123456789abcdef0"
+                sourceVolumeMode = "Filesystem"
+                volumeSnapshotClassName = "psql"
+            }
+            status = {
+                snapshotHandle = "snap-dynamic0123456789"
+                readyToUse = True
+            }
+        }
+    }
+}
+}
+
 _ready_branch_snapshot_content = lambda namespace, name {
   {
     apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
@@ -338,6 +368,83 @@ _items = [
                         deletionPolicy = "Retain"
                         driver = "ebs.csi.eks.amazonaws.com"
                         source.snapshotHandle = "snap-0123456789abcdef0"
+                        volumeSnapshotRef = {
+                            name = "br-x-snap"
+                            namespace = "preview-pr-1"
+                        }
+                    }
+                }
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "br-x-branch-snapshot"
+                    spec.forProvider.manifest.spec.source.volumeSnapshotContentName = "preview-pr-1-br-x-6a6f418e5232e5cb-content"
+                }
+                {
+                    apiVersion = "hops.ops.com.ai/v1alpha1"
+                    kind = "PSQLBranch"
+                    metadata.name = "br-x"
+                    status = {
+                        ready = False
+                        conditions = [
+                            {type = "Responsive", status = "True"}
+                            {type = "Synced", status = "True"}
+                            {type = "Ready", status = "False"}
+                        ]
+                    }
+                }
+            ]
+        }
+    }
+
+    # Dynamic CSI content stores the source volume in spec and the resulting
+    # snapshot in status. Import the snapshot ID, never the source volume ID.
+    metav1alpha1.CompositionTest {
+        metadata.name = "cross-ns-imports-dynamic-status-snapshot-handle"
+        spec = {
+            compositionPath = "apis/psqlbranches/composition.yaml"
+            xrdPath = "apis/psqlbranches/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLBranch {
+                metadata = {name = "br-x", namespace = "preview-pr-1"}
+                spec = {
+                    clusterName = "prod"
+                    source = {name = "src-app", namespace = "team-app"}
+                }
+            }
+            observedResources = [
+                _ready_source_cluster("preview-pr-1", "br-x-source-cluster"),
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata = {
+                        name = "br-x-source-snapshot"
+                        namespace = "preview-pr-1"
+                        annotations = {
+                            "crossplane.io/composition-resource-name" = "source-snapshot"
+                            "gotemplating.fn.crossplane.io/composition-resource-name" = "source-snapshot"
+                        }
+                    }
+                    status = {
+                        conditions = [{type = "Ready", status = "True"}]
+                        atProvider.manifest.status = {
+                            boundVolumeSnapshotContentName = "snapcontent-from-source"
+                            readyToUse = True
+                        }
+                    }
+                }
+                _ready_dynamic_source_snapshot_content("preview-pr-1", "br-x-source-snapshot-content")
+            ]
+            assertResources = [
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata.name = "br-x-branch-snapshot-content"
+                    spec.forProvider.manifest.spec = {
+                        deletionPolicy = "Retain"
+                        driver = "ebs.csi.eks.amazonaws.com"
+                        source.snapshotHandle = "snap-dynamic0123456789"
                         volumeSnapshotRef = {
                             name = "br-x-snap"
                             namespace = "preview-pr-1"

@@ -1237,4 +1237,78 @@ _items = [
     }
 ]
 
-items = _items
+_binding_items = [
+    # Retain the controller-owned reverse pointer while snapshots are unready.
+    # An existing content binding wins over a new/missing snapshot observation;
+    # Kubernetes forbids retargeting a content after binding.
+    metav1alpha1.CompositionTest {
+        metadata.name = "cross-ns-preserves-snapshot-binding-" + binding.label
+        spec = {
+            compositionPath = "apis/psqlbranches/composition.yaml"
+            xrdPath = "apis/psqlbranches/definition.yaml"
+            timeoutSeconds = 60
+            validate = False
+            xr = stacksv1alpha1.PSQLBranch {
+                metadata = {name = "br-binding", namespace = "preview-pr-1"}
+                spec = {
+                    clusterName = "production"
+                    source = {name = "source", namespace = "staging"}
+                }
+            }
+            observedResources = [
+                _ready_source_cluster("preview-pr-1", "br-binding-source-cluster"),
+                _ready_source_snapshot("preview-pr-1", "br-binding-source-snapshot"),
+                _ready_source_snapshot_content("preview-pr-1", "br-binding-source-snapshot-content"),
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata = {
+                        name = "br-binding-branch-snapshot"
+                        namespace = "preview-pr-1"
+                        annotations = {
+                            "crossplane.io/composition-resource-name" = "branch-snapshot"
+                            "gotemplating.fn.crossplane.io/composition-resource-name" = "branch-snapshot"
+                        }
+                    }
+                    status = {
+                        conditions = [{type = "Ready", status = "False"}]
+                        atProvider.manifest.metadata.uid = binding.snapshot_uid
+                    }
+                }
+                {
+                    apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                    kind = "Object"
+                    metadata = {
+                        name = "br-binding-branch-snapshot-content"
+                        namespace = "preview-pr-1"
+                        annotations = {
+                            "crossplane.io/composition-resource-name" = "branch-snapshot-content"
+                            "gotemplating.fn.crossplane.io/composition-resource-name" = "branch-snapshot-content"
+                        }
+                    }
+                    status = {
+                        conditions = [{type = "Ready", status = "False"}]
+                        atProvider.manifest.spec.volumeSnapshotRef.uid = binding.content_uid
+                    }
+                }
+            ]
+            assertResources = [{
+                apiVersion = "kubernetes.m.crossplane.io/v1alpha1"
+                kind = "Object"
+                metadata.name = "br-binding-branch-snapshot-content"
+                spec.forProvider.manifest.spec.volumeSnapshotRef = {
+                    name = "br-binding-snap"
+                    namespace = "preview-pr-1"
+                    uid = binding.expected_uid
+                }
+            }]
+        }
+    }
+    for binding in [
+        {label = "before-ready", snapshot_uid = "64eea95d-5b23-4ae1-85f2-554d61aae394", content_uid = "", expected_uid = "64eea95d-5b23-4ae1-85f2-554d61aae394"},
+        {label = "observation-loss", snapshot_uid = "", content_uid = "8ec4fd04-3158-4b50-8e64-c2e4d276956c", expected_uid = "8ec4fd04-3158-4b50-8e64-c2e4d276956c"},
+        {label = "no-rebinding", snapshot_uid = "64eea95d-5b23-4ae1-85f2-554d61aae394", content_uid = "8ec4fd04-3158-4b50-8e64-c2e4d276956c", expected_uid = "8ec4fd04-3158-4b50-8e64-c2e4d276956c"},
+    ]
+]
+
+items = _items + _binding_items

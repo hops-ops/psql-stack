@@ -74,6 +74,9 @@ spec:
           kind: VolumeSnapshot
           name: {{ $state.name }}-snap
           namespace: {{ $state.namespace }}
+          {{- if $state.observed.branchSnapshotContent.bindingUID }}
+          uid: {{ $state.observed.branchSnapshotContent.bindingUID | quote }}
+          {{- end }}
   providerConfigRef:
     name: {{ $state.kubernetesProviderConfigRef.name }}
     kind: {{ $state.kubernetesProviderConfigRef.kind }}

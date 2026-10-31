@@ -72,6 +72,7 @@
 {{- $branchResource := $snapEntryBranch.resource | default dict }}
 {{- $branchAtProvider := (($branchResource.status | default dict).atProvider | default dict) }}
 {{- $branchManifest := $branchAtProvider.manifest | default dict }}
+{{- $branchSnapshotUID := ($branchManifest.metadata | default dict).uid | default "" }}
 {{- $branchStatus := $branchManifest.status | default dict }}
 {{- $branchContent := $branchStatus.boundVolumeSnapshotContentName | default "" }}
 {{- $branchReady := false }}
@@ -120,6 +121,14 @@
 
 {{- $branchContentEntry := get $observed "branch-snapshot-content" | default dict }}
 {{- $branchContentResource := $branchContentEntry.resource | default dict }}
+{{- $branchContentAtProvider := (($branchContentResource.status | default dict).atProvider | default dict) }}
+{{- $branchContentManifest := $branchContentAtProvider.manifest | default dict }}
+{{- $branchContentSpec := $branchContentManifest.spec | default dict }}
+# The reference is atomic under server-side apply. Retain an existing binding,
+# or learn the actual snapshot UID before readiness, so reapplying the content
+# cannot clear the snapshot-controller's reverse pointer. Never rebind a content
+# that already belongs to a different snapshot instance.
+{{- $bindingUID := ($branchContentSpec.volumeSnapshotRef | default dict).uid | default $branchSnapshotUID }}
 {{- $branchContentReady := false }}
 {{- range (($branchContentResource.status | default dict).conditions | default list) }}
   {{- if and (eq .type "Ready") (eq .status "True") }}
@@ -187,6 +196,7 @@
   )
   "branchSnapshotContent" (dict
     "ready" $branchContentReady
+    "bindingUID" $bindingUID
   )
   "branchSnapshot" (dict
     "ready" $branchReady

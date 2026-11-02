@@ -1,0 +1,44 @@
+# code: language=yaml
+{{- $backup := $state.backup }}
+{{- $storeEntry := get $observed "backup-objectstore" | default dict }}
+{{- $storeResource := $storeEntry.resource | default dict }}
+{{- $storeStatus := $storeResource.status | default dict }}
+{{- $storeManifest := ($storeStatus.atProvider | default dict).manifest | default dict }}
+{{- $window := get ((($storeManifest.status | default dict).serverRecoveryWindow) | default dict) $backup.serverName | default dict }}
+{{- $phase := "Unconfigured" }}
+{{- $archiving := false }}
+{{- range ($clusterStatus.conditions | default list) }}
+  {{- if and (eq .type "ContinuousArchiving") (eq .status "True") }}
+    {{- $archiving = true }}
+  {{- end }}
+{{- end }}
+{{- $ready := dict }}
+{{- range $key := list "backup-objectstore" "backup-schedule" }}
+  {{- $entry := get $observed $key | default dict }}
+  {{- $resource := $entry.resource | default dict }}
+  {{- $resourceReady := false }}
+  {{- range (($resource.status | default dict).conditions | default list) }}
+    {{- if and (eq .type "Ready") (eq .status "True") }}
+      {{- $resourceReady = true }}
+    {{- end }}
+  {{- end }}
+  {{- $_ := set $ready $key $resourceReady }}
+{{- end }}
+{{- $_ := set $state.observed "backupStore" (dict "ready" (get $ready "backup-objectstore")) }}
+{{- $_ := set $state.observed "backupSchedule" (dict "ready" (get $ready "backup-schedule")) }}
+{{- if $backup.enabled }}
+  {{- $phase = "Initializing" }}
+  {{- if and $window.lastSuccessfulBackupTime $window.firstRecoverabilityPoint $archiving $clusterReady (get $ready "backup-objectstore") }}
+    {{- $phase = "Recoverable" }}
+  {{- end }}
+  {{- if or (and $window.lastFailedBackupTime (gt ($window.lastFailedBackupTime | default "") ($window.lastSuccessfulBackupTime | default ""))) (and $window.lastSuccessfulBackupTime (not $archiving)) }}
+    {{- $phase = "Failing" }}
+  {{- end }}
+{{- end }}
+{{- $_ := set $state.status "backup" (dict
+  "phase" $phase
+  "objectStoreName" (($storeManifest.metadata | default dict).name | default "")
+  "lastSuccessfulBackupTime" ($window.lastSuccessfulBackupTime | default "")
+  "lastFailedBackupTime" ($window.lastFailedBackupTime | default "")
+  "firstRecoverabilityPoint" ($window.firstRecoverabilityPoint | default "")
+) }}

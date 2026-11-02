@@ -13,3 +13,6 @@ _output/
 tests/**/secrets/
 tests/**/env/
 apis/**/configuration.yaml
+
+# Python recovery-drill tooling
+__pycache__/

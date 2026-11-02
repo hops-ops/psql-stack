@@ -1,0 +1,52 @@
+# code: language=yaml
+# cert-manager must already be installed. The chart provisions the mutually
+# authenticated CNPG-I certificates; install once in the operator's namespace.
+{{- $plugin := $state.backupPlugin }}
+{{- if $plugin.enabled }}
+---
+apiVersion: helm.m.crossplane.io/v1beta1
+kind: Release
+metadata:
+  name: {{ $plugin.name }}
+  annotations:
+    {{ setResourceNameAnnotation "barman-cloud" }}
+    crossplane.io/external-name: {{ $plugin.name }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $state.managementPolicies | toJson }}
+  forProvider:
+    chart:
+      name: plugin-barman-cloud
+      repository: https://cloudnative-pg.github.io/charts
+      version: {{ $plugin.chartVersion | quote }}
+    namespace: {{ $state.cnpg.namespace }}
+    {{- $defaults := dict
+      "resources" (dict "requests" (dict "cpu" "20m" "memory" "64Mi") "limits" (dict "memory" "256Mi"))
+      "podLabels" $state.labels
+    }}
+    values: {{ if $plugin.overrideAllValues }}{{ $plugin.overrideAllValues | toJson }}{{ else }}{{ mergeOverwrite $defaults $plugin.values | toJson }}{{ end }}
+  rollbackLimit: 3
+  providerConfigRef: {{ $state.helmProviderConfigRef | toJson }}
+{{- if and $state.observed.cnpg.ready $state.observed.backupPlugin.ready }}
+---
+apiVersion: protection.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  name: {{ $state.name }}-delete-barman-before-cnpg
+  annotations:
+    {{ setResourceNameAnnotation "usage-cnpg-barman" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  replayDeletion: true
+  of:
+    apiVersion: helm.m.crossplane.io/v1beta1
+    kind: Release
+    resourceRef:
+      name: {{ $state.cnpg.name }}
+  by:
+    apiVersion: helm.m.crossplane.io/v1beta1
+    kind: Release
+    resourceRef:
+      name: {{ $plugin.name }}
+{{- end }}
+{{- end }}

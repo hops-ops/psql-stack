@@ -28,6 +28,9 @@ EXAMPLES := \
     examples/psqlstacks/standard.yaml:: \
     examples/psqlclusters/minimal.yaml:: \
     examples/psqlclusters/standard.yaml:: \
+    examples/psqlstacks/backups.yaml:: \
+    examples/psqlclusters/backups.yaml:: \
+    examples/psqlclusters/restore.yaml:: \
     examples/psqlbranches/same-namespace.yaml::
 
 # Render all examples (parallel execution, output shown per-job when complete)
@@ -125,3 +128,11 @@ e2e:
 publish:
 	@if [ -z "$(tag)" ]; then echo "Error: tag is not set. Usage: make publish tag=<version>"; exit 1; fi
 	up project build --push --tag $(tag)
+
+.PHONY: backup-test backup-e2e
+backup-test:
+	python3 tests/backup/render.py
+	python3 tests/backup/alerts.py
+
+backup-e2e:
+	bash tests/backup/run-e2e.sh

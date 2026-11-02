@@ -114,6 +114,26 @@ spec:
                     description: Helm values that replace all defaults for this component.
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
+              backupPlugin:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                    default: false
+                  name:
+                    type: string
+                    default: cnpg-barman-cloud
+                  chartVersion:
+                    type: string
+                    default: 0.8.1
+                  values:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  overrideAllValues:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                description: Optional shared Barman Cloud CNPG-I plugin (chart 0.8.1 / plugin v0.15.1). Installed in the CNPG
+                  operator namespace. Requires cert-manager before enabling. No bucket or cloud IAM is created.
               scaleToZeroPlugin:
                 description: |
                   cnpg-i-scale-to-zero plugin (github.com/xataio/cnpg-i-scale-to-zero).

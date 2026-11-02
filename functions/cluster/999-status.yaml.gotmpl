@@ -16,6 +16,7 @@ apiVersion: {{ $xr.apiVersion }}
 kind: {{ $xr.kind }}
 status:
   ready: {{ $state.status.ready }}
+  backup: {{ $state.status.backup | toJson }}
   clusterPhase: {{ $state.status.clusterPhase | quote }}
   app:
     secretName: {{ $state.app.secretName | quote }}

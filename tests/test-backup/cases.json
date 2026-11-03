@@ -80,7 +80,13 @@
                   "retentionPolicy": "30d"
                 }
               }
-            }
+            },
+            "managementPolicies": [
+              "Observe",
+              "Create",
+              "Update",
+              "LateInitialize"
+            ]
           }
         },
         {
@@ -99,7 +105,13 @@
                   "backupOwnerReference": "none"
                 }
               }
-            }
+            },
+            "managementPolicies": [
+              "Observe",
+              "Create",
+              "Update",
+              "LateInitialize"
+            ]
           }
         }
       ]
@@ -405,6 +417,30 @@
           "status": {
             "backup": {
               "phase": "Recoverable"
+            }
+          }
+        },
+        {
+          "apiVersion": "protection.crossplane.io/v1beta1",
+          "kind": "Usage",
+          "metadata": {
+            "name": "app-db-delete-cluster-before-backup-store"
+          },
+          "spec": {
+            "replayDeletion": true,
+            "of": {
+              "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+              "kind": "Object",
+              "resourceRef": {
+                "name": "app-db-backup-objectstore"
+              }
+            },
+            "by": {
+              "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+              "kind": "Object",
+              "resourceRef": {
+                "name": "app-db-cnpg-cluster"
+              }
             }
           }
         }

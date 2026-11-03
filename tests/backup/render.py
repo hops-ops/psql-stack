@@ -56,6 +56,16 @@ for case in CASES:
         cluster=next(d['spec']['forProvider']['manifest'] for d in docs if d and d['kind']=='Object' and d['spec']['forProvider']['manifest']['kind']=='Cluster')
         assert 'initdb' not in cluster['spec']['bootstrap']
         assert not any(p.get('isWALArchiver') for p in cluster['spec'].get('plugins',[]))
+    xr=next(d for d in docs if d and d['kind']==case['spec']['xr']['kind'])
+    if xr['kind']=='PSQLCluster':
+        warnings=[c for c in xr['status']['conditions'] if c['type']=='ConfigurationWarning']
+        assert len(warnings)==1,(case['metadata']['name'],warnings)
+        if case['metadata']['name']=='ha-hibernation-backup-warnings':
+            assert warnings[0]['status']=='True' and 'scaleToZero+ha' in warnings[0]['message'] and 'Backups require' in warnings[0]['message']
+        if case['metadata']['name']=='no-completed-backup':
+            assert warnings[0]['status']=='False','A resolved configuration warning must clear'
+    if case['metadata']['name']=='manual-backups-only':
+        assert not any(d and d['kind']=='Object' and d['spec']['forProvider']['manifest']['kind']=='ScheduledBackup' for d in docs),'Disabled scheduling must not create ScheduledBackup'
     print('PASS '+case['metadata']['name'],flush=True)
 
 base=copy.deepcopy(CASES[0]['spec'])

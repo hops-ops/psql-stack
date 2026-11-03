@@ -25,13 +25,14 @@ status:
     port: 5432
   superuser:
     secretName: {{ $superuserSecretName | quote }}
-  {{- if $state.warnings }}
-  conditions:
-    {{- range $i, $msg := $state.warnings }}
-    - type: ConfigurationWarning
-      status: "True"
-      reason: ConflictingToggles
-      message: {{ $msg | quote }}
-      lastTransitionTime: "1970-01-01T00:00:00Z"
-    {{- end }}
-  {{- end }}
+# Use the condition response API so resolved warnings replace prior conditions.
+# Conditions are keyed by type; combine simultaneous warnings into one message.
+---
+apiVersion: meta.gotemplating.fn.crossplane.io/v1alpha1
+kind: ClaimConditions
+conditions:
+  - type: ConfigurationWarning
+    status: {{ if $state.warnings }}"True"{{ else }}"False"{{ end }}
+    reason: {{ if $state.warnings }}ConflictingToggles{{ else }}ConfigurationValid{{ end }}
+    message: {{ if $state.warnings }}{{ join "; " $state.warnings | quote }}{{ else }}"Integration toggles are compatible"{{ end }}
+    target: Composite

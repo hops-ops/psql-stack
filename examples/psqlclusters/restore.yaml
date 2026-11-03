@@ -1,0 +1,16 @@
+apiVersion: hops.ops.com.ai/v1alpha1
+kind: PSQLCluster
+metadata:
+  name: app-restored
+  namespace: databases
+spec:
+  clusterName: production
+  storage:
+    size: 10Gi
+  restore:
+    source:
+      objectStoreName: source-readonly
+      serverName: app-db
+    target:
+      backupID: 20261102T120000
+      targetTime: '2026-11-02T12:15:00Z'

@@ -1,0 +1,75 @@
+# code: language=yaml
+# Observe-only references and managed ObjectStores share one stable resource
+# name. Neither storage buckets nor credential Secrets are owned by this XR.
+{{- $backup := $state.backup }}
+{{- if or $backup.enabled $state.restore }}
+{{- $storeName := $backup.objectStoreName }}
+{{- $reference := $backup.existingObjectStore }}
+{{- if $state.restore }}
+  {{- $storeName = $state.restore.source.objectStoreName }}
+  {{- $reference = true }}
+{{- end }}
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-backup-objectstore
+  annotations:
+    {{ setResourceNameAnnotation "backup-objectstore" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ if $reference }}["Observe"]{{ else }}{{ $backup.managementPolicies | toJson }}{{ end }}
+  forProvider:
+    manifest:
+      apiVersion: barmancloud.cnpg.io/v1
+      kind: ObjectStore
+      metadata:
+        name: {{ $storeName }}
+        namespace: {{ $state.namespace }}
+      {{- if not $reference }}
+        labels: {{ $state.labels | toJson }}
+      spec:
+        retentionPolicy: {{ $backup.retentionPolicy | quote }}
+        configuration:
+          destinationPath: {{ $backup.destinationPath | quote }}
+          s3Credentials: {{ $backup.credentials | toJson }}
+          {{- with $backup.endpointURL }}
+          endpointURL: {{ . | quote }}
+          {{- end }}
+          {{- with $backup.endpointCA }}
+          endpointCA: {{ . | toJson }}
+          {{- end }}
+          data:
+            compression: {{ $backup.compression }}
+            jobs: {{ $backup.jobs }}
+          wal:
+            compression: {{ $backup.compression }}
+        {{- with $backup.sidecar }}
+        instanceSidecarConfiguration: {{ . | toJson }}
+        {{- end }}
+      {{- end }}
+  providerConfigRef: {{ $state.kubernetesProviderConfigRef | toJson }}
+
+{{- if and $state.observed.cluster.ready $state.observed.backupStore.ready }}
+---
+apiVersion: protection.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  name: {{ $state.name }}-delete-cluster-before-backup-store
+  annotations:
+    {{ setResourceNameAnnotation "usage-cluster-backup-store" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  replayDeletion: true
+  of:
+    apiVersion: kubernetes.m.crossplane.io/v1alpha1
+    kind: Object
+    resourceRef:
+      name: {{ $state.name }}-backup-objectstore
+  by:
+    apiVersion: kubernetes.m.crossplane.io/v1alpha1
+    kind: Object
+    resourceRef:
+      name: {{ $state.name }}-cnpg-cluster
+{{- end }}
+{{- end }}

@@ -1,0 +1,1648 @@
+[
+  {
+    "metadata": {
+      "name": "managed-backup-policy"
+    },
+    "spec": {
+      "compositionPath": "apis/psqlclusters/composition.yaml",
+      "xrdPath": "apis/psqlclusters/definition.yaml",
+      "timeoutSeconds": 90,
+      "validate": false,
+      "xr": {
+        "apiVersion": "hops.ops.com.ai/v1alpha1",
+        "kind": "PSQLCluster",
+        "metadata": {
+          "name": "app-db",
+          "namespace": "databases"
+        },
+        "spec": {
+          "clusterName": "production",
+          "storage": {
+            "size": "10Gi"
+          },
+          "backup": {
+            "enabled": true,
+            "destinationPath": "s3://database-backups/production",
+            "credentials": {
+              "inheritFromIAMRole": true
+            },
+            "schedule": {
+              "cron": "0 0 6 * * *"
+            },
+            "monitoring": {
+              "enabled": false,
+              "labels": {
+                "release": "prometheus"
+              }
+            }
+          }
+        }
+      },
+      "assertResources": [
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-cnpg-cluster"
+          },
+          "spec": {
+            "forProvider": {
+              "manifest": {
+                "spec": {
+                  "plugins": [
+                    {
+                      "name": "barman-cloud.cloudnative-pg.io",
+                      "isWALArchiver": true,
+                      "parameters": {
+                        "barmanObjectName": "app-db-backups",
+                        "serverName": "app-db"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-backup-objectstore"
+          },
+          "spec": {
+            "forProvider": {
+              "manifest": {
+                "spec": {
+                  "configuration": {
+                    "destinationPath": "s3://database-backups/production"
+                  },
+                  "retentionPolicy": "30d"
+                }
+              }
+            },
+            "managementPolicies": [
+              "Observe",
+              "Create",
+              "Update",
+              "LateInitialize"
+            ]
+          }
+        },
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-backup-schedule"
+          },
+          "spec": {
+            "forProvider": {
+              "manifest": {
+                "spec": {
+                  "schedule": "0 0 6 * * *",
+                  "target": "primary",
+                  "immediate": false,
+                  "backupOwnerReference": "none"
+                }
+              }
+            },
+            "managementPolicies": [
+              "Observe",
+              "Create",
+              "Update",
+              "LateInitialize"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
+    "metadata": {
+      "name": "plugins-coexist-by-name"
+    },
+    "spec": {
+      "compositionPath": "apis/psqlclusters/composition.yaml",
+      "xrdPath": "apis/psqlclusters/definition.yaml",
+      "timeoutSeconds": 90,
+      "validate": false,
+      "xr": {
+        "apiVersion": "hops.ops.com.ai/v1alpha1",
+        "kind": "PSQLCluster",
+        "metadata": {
+          "name": "app-db",
+          "namespace": "databases"
+        },
+        "spec": {
+          "clusterName": "production",
+          "storage": {
+            "size": "10Gi"
+          },
+          "backup": {
+            "enabled": true,
+            "destinationPath": "s3://database-backups/production",
+            "credentials": {
+              "inheritFromIAMRole": true
+            },
+            "schedule": {
+              "cron": "0 0 6 * * *"
+            },
+            "monitoring": {
+              "enabled": false,
+              "labels": {
+                "release": "prometheus"
+              }
+            }
+          },
+          "scaleToZero": {
+            "enabled": true
+          },
+          "cnpg": {
+            "values": {
+              "plugins": [
+                {
+                  "name": "other.example",
+                  "enabled": true
+                }
+              ]
+            }
+          }
+        }
+      },
+      "assertResources": [
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-cnpg-cluster"
+          },
+          "spec": {
+            "forProvider": {
+              "manifest": {
+                "spec": {
+                  "plugins": [
+                    {
+                      "name": "other.example",
+                      "enabled": true
+                    },
+                    {
+                      "name": "cnpg-i-scale-to-zero.xata.io",
+                      "enabled": true
+                    },
+                    {
+                      "name": "barman-cloud.cloudnative-pg.io",
+                      "isWALArchiver": true,
+                      "parameters": {
+                        "barmanObjectName": "app-db-backups",
+                        "serverName": "app-db"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "metadata": {
+      "name": "adopt-existing-store-read-only"
+    },
+    "spec": {
+      "compositionPath": "apis/psqlclusters/composition.yaml",
+      "xrdPath": "apis/psqlclusters/definition.yaml",
+      "timeoutSeconds": 90,
+      "validate": false,
+      "xr": {
+        "apiVersion": "hops.ops.com.ai/v1alpha1",
+        "kind": "PSQLCluster",
+        "metadata": {
+          "name": "app-db",
+          "namespace": "databases"
+        },
+        "spec": {
+          "clusterName": "production",
+          "storage": {
+            "size": "10Gi"
+          },
+          "backup": {
+            "enabled": true,
+            "existingObjectStore": true,
+            "objectStoreName": "old-store",
+            "serverName": "old-server",
+            "schedule": {
+              "name": "old-schedule",
+              "cron": "0 30 6 * * *"
+            }
+          }
+        }
+      },
+      "assertResources": [
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-backup-objectstore"
+          },
+          "spec": {
+            "managementPolicies": [
+              "Observe"
+            ],
+            "forProvider": {
+              "manifest": {
+                "metadata": {
+                  "name": "old-store"
+                }
+              }
+            }
+          }
+        },
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-backup-schedule"
+          },
+          "spec": {
+            "forProvider": {
+              "manifest": {
+                "spec": {
+                  "schedule": "0 30 6 * * *"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "metadata": {
+      "name": "no-completed-backup"
+    },
+    "spec": {
+      "compositionPath": "apis/psqlclusters/composition.yaml",
+      "xrdPath": "apis/psqlclusters/definition.yaml",
+      "timeoutSeconds": 90,
+      "validate": false,
+      "xr": {
+        "apiVersion": "hops.ops.com.ai/v1alpha1",
+        "kind": "PSQLCluster",
+        "metadata": {
+          "name": "app-db",
+          "namespace": "databases"
+        },
+        "spec": {
+          "clusterName": "production",
+          "storage": {
+            "size": "10Gi"
+          },
+          "backup": {
+            "enabled": true,
+            "destinationPath": "s3://database-backups/production",
+            "credentials": {
+              "inheritFromIAMRole": true
+            },
+            "schedule": {
+              "cron": "0 0 6 * * *"
+            },
+            "monitoring": {
+              "enabled": false,
+              "labels": {
+                "release": "prometheus"
+              }
+            }
+          }
+        },
+        "status": {
+          "conditions": [
+            {
+              "type": "ConfigurationWarning",
+              "status": "True",
+              "reason": "ConflictingToggles",
+              "message": "previously conflicting toggles",
+              "lastTransitionTime": "1970-01-01T00:00:00Z"
+            }
+          ]
+        }
+      },
+      "assertResources": [
+        {
+          "apiVersion": "hops.ops.com.ai/v1alpha1",
+          "kind": "PSQLCluster",
+          "metadata": {
+            "name": "app-db"
+          },
+          "status": {
+            "backup": {
+              "phase": "Initializing"
+            }
+          }
+        }
+      ],
+      "observedResources": [
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-cnpg-cluster",
+            "namespace": "databases",
+            "annotations": {
+              "crossplane.io/composition-resource-name": "cnpg-cluster",
+              "gotemplating.fn.crossplane.io/composition-resource-name": "cnpg-cluster"
+            }
+          },
+          "status": {
+            "conditions": [
+              {
+                "type": "Ready",
+                "status": "True"
+              }
+            ],
+            "atProvider": {
+              "manifest": {
+                "status": {
+                  "phase": "Cluster in healthy state",
+                  "conditions": [
+                    {
+                      "type": "ContinuousArchiving",
+                      "status": "True"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "metadata": {
+      "name": "recovery-window-observed"
+    },
+    "spec": {
+      "compositionPath": "apis/psqlclusters/composition.yaml",
+      "xrdPath": "apis/psqlclusters/definition.yaml",
+      "timeoutSeconds": 90,
+      "validate": false,
+      "xr": {
+        "apiVersion": "hops.ops.com.ai/v1alpha1",
+        "kind": "PSQLCluster",
+        "metadata": {
+          "name": "app-db",
+          "namespace": "databases"
+        },
+        "spec": {
+          "clusterName": "production",
+          "storage": {
+            "size": "10Gi"
+          },
+          "backup": {
+            "enabled": true,
+            "destinationPath": "s3://database-backups/production",
+            "credentials": {
+              "inheritFromIAMRole": true
+            },
+            "schedule": {
+              "cron": "0 0 6 * * *"
+            },
+            "monitoring": {
+              "enabled": false,
+              "labels": {
+                "release": "prometheus"
+              }
+            }
+          }
+        }
+      },
+      "assertResources": [
+        {
+          "apiVersion": "hops.ops.com.ai/v1alpha1",
+          "kind": "PSQLCluster",
+          "metadata": {
+            "name": "app-db"
+          },
+          "status": {
+            "backup": {
+              "phase": "Recoverable"
+            }
+          }
+        },
+        {
+          "apiVersion": "protection.crossplane.io/v1beta1",
+          "kind": "Usage",
+          "metadata": {
+            "name": "app-db-delete-cluster-before-backup-store"
+          },
+          "spec": {
+            "replayDeletion": true,
+            "of": {
+              "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+              "kind": "Object",
+              "resourceRef": {
+                "name": "app-db-backup-objectstore"
+              }
+            },
+            "by": {
+              "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+              "kind": "Object",
+              "resourceRef": {
+                "name": "app-db-cnpg-cluster"
+              }
+            }
+          }
+        }
+      ],
+      "observedResources": [
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-cnpg-cluster",
+            "namespace": "databases",
+            "annotations": {
+              "crossplane.io/composition-resource-name": "cnpg-cluster",
+              "gotemplating.fn.crossplane.io/composition-resource-name": "cnpg-cluster"
+            }
+          },
+          "status": {
+            "conditions": [
+              {
+                "type": "Ready",
+                "status": "True"
+              }
+            ],
+            "atProvider": {
+              "manifest": {
+                "status": {
+                  "phase": "Cluster in healthy state",
+                  "conditions": [
+                    {
+                      "type": "ContinuousArchiving",
+                      "status": "True"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-backup-objectstore",
+            "namespace": "databases",
+            "annotations": {
+              "crossplane.io/composition-resource-name": "backup-objectstore",
+              "gotemplating.fn.crossplane.io/composition-resource-name": "backup-objectstore"
+            }
+          },
+          "status": {
+            "conditions": [
+              {
+                "type": "Ready",
+                "status": "True"
+              }
+            ],
+            "atProvider": {
+              "manifest": {
+                "metadata": {
+                  "name": "app-db-backups"
+                },
+                "status": {
+                  "serverRecoveryWindow": {
+                    "app-db": {
+                      "lastSuccessfulBackupTime": "2026-11-02T12:00:00Z",
+                      "firstRecoverabilityPoint": "2026-11-01T12:00:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "metadata": {
+      "name": "continuous-archiving-alone"
+    },
+    "spec": {
+      "compositionPath": "apis/psqlclusters/composition.yaml",
+      "xrdPath": "apis/psqlclusters/definition.yaml",
+      "timeoutSeconds": 90,
+      "validate": false,
+      "xr": {
+        "apiVersion": "hops.ops.com.ai/v1alpha1",
+        "kind": "PSQLCluster",
+        "metadata": {
+          "name": "app-db",
+          "namespace": "databases"
+        },
+        "spec": {
+          "clusterName": "production",
+          "storage": {
+            "size": "10Gi"
+          },
+          "backup": {
+            "enabled": true,
+            "destinationPath": "s3://database-backups/production",
+            "credentials": {
+              "inheritFromIAMRole": true
+            },
+            "schedule": {
+              "cron": "0 0 6 * * *"
+            },
+            "monitoring": {
+              "enabled": false,
+              "labels": {
+                "release": "prometheus"
+              }
+            }
+          }
+        }
+      },
+      "assertResources": [
+        {
+          "apiVersion": "hops.ops.com.ai/v1alpha1",
+          "kind": "PSQLCluster",
+          "metadata": {
+            "name": "app-db"
+          },
+          "status": {
+            "backup": {
+              "phase": "Initializing"
+            }
+          }
+        }
+      ],
+      "observedResources": [
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-cnpg-cluster",
+            "namespace": "databases",
+            "annotations": {
+              "crossplane.io/composition-resource-name": "cnpg-cluster",
+              "gotemplating.fn.crossplane.io/composition-resource-name": "cnpg-cluster"
+            }
+          },
+          "status": {
+            "conditions": [
+              {
+                "type": "Ready",
+                "status": "True"
+              }
+            ],
+            "atProvider": {
+              "manifest": {
+                "status": {
+                  "phase": "Cluster in healthy state",
+                  "conditions": [
+                    {
+                      "type": "ContinuousArchiving",
+                      "status": "True"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "metadata": {
+      "name": "newer-failure-is-failing"
+    },
+    "spec": {
+      "compositionPath": "apis/psqlclusters/composition.yaml",
+      "xrdPath": "apis/psqlclusters/definition.yaml",
+      "timeoutSeconds": 90,
+      "validate": false,
+      "xr": {
+        "apiVersion": "hops.ops.com.ai/v1alpha1",
+        "kind": "PSQLCluster",
+        "metadata": {
+          "name": "app-db",
+          "namespace": "databases"
+        },
+        "spec": {
+          "clusterName": "production",
+          "storage": {
+            "size": "10Gi"
+          },
+          "backup": {
+            "enabled": true,
+            "destinationPath": "s3://database-backups/production",
+            "credentials": {
+              "inheritFromIAMRole": true
+            },
+            "schedule": {
+              "cron": "0 0 6 * * *"
+            },
+            "monitoring": {
+              "enabled": false,
+              "labels": {
+                "release": "prometheus"
+              }
+            }
+          }
+        }
+      },
+      "assertResources": [
+        {
+          "apiVersion": "hops.ops.com.ai/v1alpha1",
+          "kind": "PSQLCluster",
+          "metadata": {
+            "name": "app-db"
+          },
+          "status": {
+            "backup": {
+              "phase": "Failing"
+            }
+          }
+        }
+      ],
+      "observedResources": [
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-cnpg-cluster",
+            "namespace": "databases",
+            "annotations": {
+              "crossplane.io/composition-resource-name": "cnpg-cluster",
+              "gotemplating.fn.crossplane.io/composition-resource-name": "cnpg-cluster"
+            }
+          },
+          "status": {
+            "conditions": [
+              {
+                "type": "Ready",
+                "status": "True"
+              }
+            ],
+            "atProvider": {
+              "manifest": {
+                "status": {
+                  "phase": "Cluster in healthy state",
+                  "conditions": [
+                    {
+                      "type": "ContinuousArchiving",
+                      "status": "True"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-backup-objectstore",
+            "namespace": "databases",
+            "annotations": {
+              "crossplane.io/composition-resource-name": "backup-objectstore",
+              "gotemplating.fn.crossplane.io/composition-resource-name": "backup-objectstore"
+            }
+          },
+          "status": {
+            "conditions": [
+              {
+                "type": "Ready",
+                "status": "True"
+              }
+            ],
+            "atProvider": {
+              "manifest": {
+                "metadata": {
+                  "name": "app-db-backups"
+                },
+                "status": {
+                  "serverRecoveryWindow": {
+                    "app-db": {
+                      "lastSuccessfulBackupTime": "2026-11-02T12:00:00Z",
+                      "firstRecoverabilityPoint": "2026-11-01T12:00:00Z",
+                      "lastFailedBackupTime": "2026-11-02T13:00:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "metadata": {
+      "name": "unready-never-removes-backup-resources"
+    },
+    "spec": {
+      "compositionPath": "apis/psqlclusters/composition.yaml",
+      "xrdPath": "apis/psqlclusters/definition.yaml",
+      "timeoutSeconds": 90,
+      "validate": false,
+      "xr": {
+        "apiVersion": "hops.ops.com.ai/v1alpha1",
+        "kind": "PSQLCluster",
+        "metadata": {
+          "name": "app-db",
+          "namespace": "databases"
+        },
+        "spec": {
+          "clusterName": "production",
+          "storage": {
+            "size": "10Gi"
+          },
+          "backup": {
+            "enabled": true,
+            "destinationPath": "s3://database-backups/production",
+            "credentials": {
+              "inheritFromIAMRole": true
+            },
+            "schedule": {
+              "cron": "0 0 6 * * *"
+            },
+            "monitoring": {
+              "enabled": false,
+              "labels": {
+                "release": "prometheus"
+              }
+            }
+          }
+        }
+      },
+      "assertResources": [
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-backup-schedule"
+          },
+          "spec": {
+            "forProvider": {
+              "manifest": {
+                "spec": {
+                  "schedule": "0 0 6 * * *"
+                }
+              }
+            }
+          }
+        },
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-backup-objectstore"
+          },
+          "spec": {
+            "forProvider": {
+              "manifest": {
+                "spec": {
+                  "retentionPolicy": "30d"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "observedResources": [
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-cnpg-cluster",
+            "namespace": "databases",
+            "annotations": {
+              "crossplane.io/composition-resource-name": "cnpg-cluster",
+              "gotemplating.fn.crossplane.io/composition-resource-name": "cnpg-cluster"
+            }
+          },
+          "status": {
+            "conditions": [
+              {
+                "type": "Ready",
+                "status": "True"
+              }
+            ],
+            "atProvider": {
+              "manifest": {
+                "status": {
+                  "phase": "Failing over",
+                  "conditions": [
+                    {
+                      "type": "ContinuousArchiving",
+                      "status": "True"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-backup-objectstore",
+            "namespace": "databases",
+            "annotations": {
+              "crossplane.io/composition-resource-name": "backup-objectstore",
+              "gotemplating.fn.crossplane.io/composition-resource-name": "backup-objectstore"
+            }
+          },
+          "status": {
+            "conditions": [
+              {
+                "type": "Ready",
+                "status": "True"
+              }
+            ],
+            "atProvider": {
+              "manifest": {
+                "metadata": {
+                  "name": "app-db-backups"
+                },
+                "status": {
+                  "serverRecoveryWindow": {
+                    "app-db": {
+                      "lastSuccessfulBackupTime": "2026-11-02T12:00:00Z",
+                      "firstRecoverabilityPoint": "2026-11-01T12:00:00Z"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "metadata": {
+      "name": "restore-latest"
+    },
+    "spec": {
+      "compositionPath": "apis/psqlclusters/composition.yaml",
+      "xrdPath": "apis/psqlclusters/definition.yaml",
+      "timeoutSeconds": 90,
+      "validate": false,
+      "xr": {
+        "apiVersion": "hops.ops.com.ai/v1alpha1",
+        "kind": "PSQLCluster",
+        "metadata": {
+          "name": "app-db",
+          "namespace": "databases"
+        },
+        "spec": {
+          "clusterName": "production",
+          "storage": {
+            "size": "10Gi"
+          },
+          "restore": {
+            "source": {
+              "objectStoreName": "source-readonly",
+              "serverName": "source-db"
+            },
+            "target": {}
+          }
+        }
+      },
+      "assertResources": [
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-cnpg-cluster"
+          },
+          "spec": {
+            "forProvider": {
+              "manifest": {
+                "spec": {
+                  "bootstrap": {
+                    "recovery": {
+                      "source": "backup-source"
+                    }
+                  },
+                  "externalClusters": [
+                    {
+                      "name": "backup-source",
+                      "plugin": {
+                        "name": "barman-cloud.cloudnative-pg.io",
+                        "parameters": {
+                          "barmanObjectName": "source-readonly",
+                          "serverName": "source-db"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "metadata": {
+      "name": "restore-time"
+    },
+    "spec": {
+      "compositionPath": "apis/psqlclusters/composition.yaml",
+      "xrdPath": "apis/psqlclusters/definition.yaml",
+      "timeoutSeconds": 90,
+      "validate": false,
+      "xr": {
+        "apiVersion": "hops.ops.com.ai/v1alpha1",
+        "kind": "PSQLCluster",
+        "metadata": {
+          "name": "app-db",
+          "namespace": "databases"
+        },
+        "spec": {
+          "clusterName": "production",
+          "storage": {
+            "size": "10Gi"
+          },
+          "restore": {
+            "source": {
+              "objectStoreName": "source-readonly",
+              "serverName": "source-db"
+            },
+            "target": {
+              "backupID": "20261102T120000",
+              "targetTime": "2026-11-02T12:15:00Z"
+            }
+          }
+        }
+      },
+      "assertResources": [
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-cnpg-cluster"
+          },
+          "spec": {
+            "forProvider": {
+              "manifest": {
+                "spec": {
+                  "bootstrap": {
+                    "recovery": {
+                      "source": "backup-source",
+                      "recoveryTarget": {
+                        "backupID": "20261102T120000",
+                        "targetTime": "2026-11-02T12:15:00Z"
+                      }
+                    }
+                  },
+                  "externalClusters": [
+                    {
+                      "name": "backup-source",
+                      "plugin": {
+                        "name": "barman-cloud.cloudnative-pg.io",
+                        "parameters": {
+                          "barmanObjectName": "source-readonly",
+                          "serverName": "source-db"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "metadata": {
+      "name": "restore-named"
+    },
+    "spec": {
+      "compositionPath": "apis/psqlclusters/composition.yaml",
+      "xrdPath": "apis/psqlclusters/definition.yaml",
+      "timeoutSeconds": 90,
+      "validate": false,
+      "xr": {
+        "apiVersion": "hops.ops.com.ai/v1alpha1",
+        "kind": "PSQLCluster",
+        "metadata": {
+          "name": "app-db",
+          "namespace": "databases"
+        },
+        "spec": {
+          "clusterName": "production",
+          "storage": {
+            "size": "10Gi"
+          },
+          "restore": {
+            "source": {
+              "objectStoreName": "source-readonly",
+              "serverName": "source-db"
+            },
+            "target": {
+              "backupID": "20261102T120000",
+              "targetName": "before-change"
+            }
+          }
+        }
+      },
+      "assertResources": [
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-cnpg-cluster"
+          },
+          "spec": {
+            "forProvider": {
+              "manifest": {
+                "spec": {
+                  "bootstrap": {
+                    "recovery": {
+                      "source": "backup-source",
+                      "recoveryTarget": {
+                        "backupID": "20261102T120000",
+                        "targetName": "before-change"
+                      }
+                    }
+                  },
+                  "externalClusters": [
+                    {
+                      "name": "backup-source",
+                      "plugin": {
+                        "name": "barman-cloud.cloudnative-pg.io",
+                        "parameters": {
+                          "barmanObjectName": "source-readonly",
+                          "serverName": "source-db"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "metadata": {
+      "name": "optional-portable-monitoring"
+    },
+    "spec": {
+      "compositionPath": "apis/psqlclusters/composition.yaml",
+      "xrdPath": "apis/psqlclusters/definition.yaml",
+      "timeoutSeconds": 90,
+      "validate": false,
+      "xr": {
+        "apiVersion": "hops.ops.com.ai/v1alpha1",
+        "kind": "PSQLCluster",
+        "metadata": {
+          "name": "app-db",
+          "namespace": "databases"
+        },
+        "spec": {
+          "clusterName": "production",
+          "storage": {
+            "size": "10Gi"
+          },
+          "backup": {
+            "enabled": true,
+            "destinationPath": "s3://database-backups/production",
+            "credentials": {
+              "inheritFromIAMRole": true
+            },
+            "schedule": {
+              "cron": "0 0 6 * * *"
+            },
+            "monitoring": {
+              "enabled": true,
+              "labels": {
+                "release": "prometheus"
+              }
+            }
+          }
+        }
+      },
+      "assertResources": [
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-backup-monitor"
+          },
+          "spec": {
+            "forProvider": {
+              "manifest": {
+                "metadata": {
+                  "labels": {
+                    "release": "prometheus"
+                  }
+                },
+                "spec": {
+                  "selector": {
+                    "matchLabels": {
+                      "cnpg.io/cluster": "app-db"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "metadata": {
+      "name": "stack-installs-backup-plugin"
+    },
+    "spec": {
+      "compositionPath": "apis/psqlstacks/composition.yaml",
+      "xrdPath": "apis/psqlstacks/definition.yaml",
+      "timeoutSeconds": 90,
+      "validate": false,
+      "xr": {
+        "apiVersion": "hops.ops.com.ai/v1alpha1",
+        "kind": "PSQLStack",
+        "metadata": {
+          "name": "psql",
+          "namespace": "default"
+        },
+        "spec": {
+          "clusterName": "production",
+          "backupPlugin": {
+            "enabled": true
+          }
+        }
+      },
+      "assertResources": [
+        {
+          "apiVersion": "helm.m.crossplane.io/v1beta1",
+          "kind": "Release",
+          "metadata": {
+            "name": "cnpg-barman-cloud"
+          },
+          "spec": {
+            "forProvider": {
+              "chart": {
+                "name": "plugin-barman-cloud",
+                "version": "0.8.1"
+              },
+              "namespace": "cnpg-system"
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "metadata": {
+      "name": "disabled-backup-preserves-legacy-plugin-override"
+    },
+    "spec": {
+      "compositionPath": "apis/psqlclusters/composition.yaml",
+      "xrdPath": "apis/psqlclusters/definition.yaml",
+      "timeoutSeconds": 90,
+      "validate": false,
+      "xr": {
+        "apiVersion": "hops.ops.com.ai/v1alpha1",
+        "kind": "PSQLCluster",
+        "metadata": {
+          "name": "app-db",
+          "namespace": "databases"
+        },
+        "spec": {
+          "clusterName": "production",
+          "storage": {
+            "size": "10Gi"
+          },
+          "scaleToZero": {
+            "enabled": true
+          },
+          "cnpg": {
+            "values": {
+              "plugins": [
+                {
+                  "name": "legacy.override.example"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "assertResources": [
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-cnpg-cluster"
+          },
+          "spec": {
+            "forProvider": {
+              "manifest": {
+                "spec": {
+                  "plugins": [
+                    {
+                      "name": "legacy.override.example"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "metadata": {
+      "name": "existing-applied-archive-identity"
+    },
+    "spec": {
+      "compositionPath": "apis/psqlclusters/composition.yaml",
+      "xrdPath": "apis/psqlclusters/definition.yaml",
+      "timeoutSeconds": 90,
+      "validate": false,
+      "xr": {
+        "apiVersion": "hops.ops.com.ai/v1alpha1",
+        "kind": "PSQLCluster",
+        "metadata": {
+          "name": "app-db",
+          "namespace": "databases"
+        },
+        "spec": {
+          "clusterName": "production",
+          "storage": {
+            "size": "10Gi"
+          },
+          "backup": {
+            "enabled": true,
+            "destinationPath": "s3://database-backups/production",
+            "credentials": {
+              "inheritFromIAMRole": true
+            },
+            "schedule": {
+              "cron": "0 0 6 * * *"
+            },
+            "monitoring": {
+              "enabled": false,
+              "labels": {
+                "release": "prometheus"
+              }
+            }
+          }
+        }
+      },
+      "assertResources": [
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-cnpg-cluster"
+          },
+          "spec": {
+            "forProvider": {
+              "manifest": {
+                "spec": {
+                  "plugins": [
+                    {
+                      "name": "barman-cloud.cloudnative-pg.io",
+                      "isWALArchiver": true,
+                      "parameters": {
+                        "barmanObjectName": "app-db-backups",
+                        "serverName": "app-db"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "observedResources": [
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-cnpg-cluster",
+            "annotations": {
+              "crossplane.io/composition-resource-name": "cnpg-cluster",
+              "gotemplating.fn.crossplane.io/composition-resource-name": "cnpg-cluster"
+            },
+            "namespace": "databases"
+          },
+          "status": {
+            "atProvider": {
+              "manifest": {
+                "spec": {
+                  "plugins": [
+                    {
+                      "name": "barman-cloud.cloudnative-pg.io",
+                      "parameters": {
+                        "barmanObjectName": "app-db-backups",
+                        "serverName": "app-db"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "metadata": {
+      "name": "restore-custom-application-credentials"
+    },
+    "spec": {
+      "compositionPath": "apis/psqlclusters/composition.yaml",
+      "xrdPath": "apis/psqlclusters/definition.yaml",
+      "timeoutSeconds": 90,
+      "validate": false,
+      "xr": {
+        "apiVersion": "hops.ops.com.ai/v1alpha1",
+        "kind": "PSQLCluster",
+        "metadata": {
+          "name": "app-db",
+          "namespace": "databases"
+        },
+        "spec": {
+          "clusterName": "production",
+          "storage": {
+            "size": "10Gi"
+          },
+          "restore": {
+            "source": {
+              "objectStoreName": "source-readonly",
+              "serverName": "source-db"
+            },
+            "target": {}
+          },
+          "app": {
+            "database": "customer_db",
+            "role": "customer_owner",
+            "secretName": "customer-credentials"
+          }
+        }
+      },
+      "assertResources": [
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-cnpg-cluster"
+          },
+          "spec": {
+            "forProvider": {
+              "manifest": {
+                "spec": {
+                  "bootstrap": {
+                    "recovery": {
+                      "source": "backup-source",
+                      "database": "customer_db",
+                      "owner": "customer_owner",
+                      "secret": {
+                        "name": "customer-credentials"
+                      }
+                    }
+                  },
+                  "externalClusters": [
+                    {
+                      "name": "backup-source",
+                      "plugin": {
+                        "name": "barman-cloud.cloudnative-pg.io",
+                        "parameters": {
+                          "barmanObjectName": "source-readonly",
+                          "serverName": "source-db"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "apiVersion": "hops.ops.com.ai/v1alpha1",
+          "kind": "PSQLCluster",
+          "metadata": {
+            "name": "app-db"
+          },
+          "status": {
+            "app": {
+              "database": "customer_db",
+              "secretName": "customer-credentials"
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "metadata": {
+      "name": "ha-hibernation-backup-warnings"
+    },
+    "spec": {
+      "compositionPath": "apis/psqlclusters/composition.yaml",
+      "xrdPath": "apis/psqlclusters/definition.yaml",
+      "timeoutSeconds": 90,
+      "validate": false,
+      "xr": {
+        "apiVersion": "hops.ops.com.ai/v1alpha1",
+        "kind": "PSQLCluster",
+        "metadata": {
+          "name": "app-db",
+          "namespace": "databases"
+        },
+        "spec": {
+          "clusterName": "production",
+          "storage": {
+            "size": "10Gi"
+          },
+          "backup": {
+            "enabled": true,
+            "destinationPath": "s3://database-backups/production",
+            "credentials": {
+              "inheritFromIAMRole": true
+            },
+            "schedule": {
+              "cron": "0 0 6 * * *"
+            },
+            "monitoring": {
+              "enabled": false,
+              "labels": {
+                "release": "prometheus"
+              }
+            }
+          },
+          "scaleToZero": {
+            "enabled": true
+          },
+          "cnpg": {
+            "values": {
+              "plugins": [
+                {
+                  "name": "other.example",
+                  "enabled": true
+                }
+              ]
+            }
+          },
+          "ha": {
+            "enabled": true
+          }
+        }
+      },
+      "assertResources": [
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-cnpg-cluster"
+          },
+          "spec": {
+            "forProvider": {
+              "manifest": {
+                "spec": {
+                  "plugins": [
+                    {
+                      "name": "other.example",
+                      "enabled": true
+                    },
+                    {
+                      "name": "cnpg-i-scale-to-zero.xata.io",
+                      "enabled": true
+                    },
+                    {
+                      "name": "barman-cloud.cloudnative-pg.io",
+                      "isWALArchiver": true,
+                      "parameters": {
+                        "barmanObjectName": "app-db-backups",
+                        "serverName": "app-db"
+                      }
+                    }
+                  ],
+                  "instances": 3
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "metadata": {
+      "name": "manual-backups-only"
+    },
+    "spec": {
+      "compositionPath": "apis/psqlclusters/composition.yaml",
+      "xrdPath": "apis/psqlclusters/definition.yaml",
+      "timeoutSeconds": 90,
+      "validate": false,
+      "xr": {
+        "apiVersion": "hops.ops.com.ai/v1alpha1",
+        "kind": "PSQLCluster",
+        "metadata": {
+          "name": "app-db",
+          "namespace": "databases"
+        },
+        "spec": {
+          "clusterName": "production",
+          "storage": {
+            "size": "10Gi"
+          },
+          "backup": {
+            "enabled": true,
+            "destinationPath": "s3://database-backups/production",
+            "credentials": {
+              "inheritFromIAMRole": true
+            },
+            "schedule": {
+              "enabled": false
+            },
+            "monitoring": {
+              "enabled": false,
+              "labels": {
+                "release": "prometheus"
+              }
+            }
+          }
+        }
+      },
+      "assertResources": [
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-cnpg-cluster"
+          },
+          "spec": {
+            "forProvider": {
+              "manifest": {
+                "spec": {
+                  "plugins": [
+                    {
+                      "name": "barman-cloud.cloudnative-pg.io",
+                      "isWALArchiver": true,
+                      "parameters": {
+                        "barmanObjectName": "app-db-backups",
+                        "serverName": "app-db"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-backup-objectstore"
+          },
+          "spec": {
+            "forProvider": {
+              "manifest": {
+                "spec": {
+                  "configuration": {
+                    "destinationPath": "s3://database-backups/production"
+                  },
+                  "retentionPolicy": "30d"
+                }
+              }
+            },
+            "managementPolicies": [
+              "Observe",
+              "Create",
+              "Update",
+              "LateInitialize"
+            ]
+          }
+        }
+      ]
+    }
+  }
+]

@@ -308,6 +308,7 @@ _items = [
                     }
                     spec = {
                         clusterName = _test_name
+                        backupPlugin.enabled = True
                         labels = {
                             "hops.ops.com.ai/e2etest" = "true"
                             "hops.ops.com.ai/test-run" = _now

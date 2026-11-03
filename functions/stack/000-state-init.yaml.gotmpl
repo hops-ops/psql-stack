@@ -118,6 +118,9 @@
 # ==============================================================================
 # Initialize $state
 # ==============================================================================
+{{- $barman := $spec.backupPlugin | default dict }}
+# renovate: datasource=helm depName=plugin-barman-cloud registryUrl=https://cloudnative-pg.github.io/charts
+{{- $barmanChartVersion := $barman.chartVersion | default "0.8.1" }}
 {{- $state := dict
   "name" $name
   "clusterName" $clusterName
@@ -138,6 +141,13 @@
     "enabled" $s2zEnabled
     "version" $scaleToZeroVersion
     "namespace" ($s2z.namespace | default $namespace)
+  )
+  "backupPlugin" (dict
+    "enabled" ($barman.enabled | default false)
+    "name" ($barman.name | default "cnpg-barman-cloud")
+    "chartVersion" $barmanChartVersion
+    "values" ($barman.values | default dict)
+    "overrideAllValues" ($barman.overrideAllValues | default dict)
   )
   "atlasOperator" (dict
     "name" ($atlas.name | default "atlas-operator")

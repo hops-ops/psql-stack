@@ -1,0 +1,20 @@
+apiVersion: hops.ops.com.ai/v1alpha1
+kind: PSQLCluster
+metadata:
+  name: app-db
+  namespace: databases
+spec:
+  clusterName: production
+  storage:
+    size: 10Gi
+  backup:
+    enabled: true
+    destinationPath: s3://database-backups/production
+    credentials:
+      inheritFromIAMRole: true
+    schedule:
+      cron: 0 0 6 * * *
+    monitoring:
+      enabled: true
+      labels:
+        release: prometheus

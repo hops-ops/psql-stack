@@ -1,0 +1,83 @@
+# code: language=yaml
+{{- $backupSpec := $spec.backup | default dict }}
+{{- $scheduleSpec := $backupSpec.schedule | default dict }}
+{{- $backupMonitoring := $backupSpec.monitoring | default dict }}
+{{- $backup := mergeOverwrite (dict
+  "enabled" false
+  "objectStoreName" (printf "%s-backups" $name)
+  "existingObjectStore" false
+  "serverName" $name
+  "retentionPolicy" "30d"
+  "compression" "gzip"
+  "jobs" 2
+  "managementPolicies" (list "Observe" "Create" "Update" "LateInitialize")
+) (deepCopy $backupSpec) }}
+{{- $_ := set $backup "schedule" (mergeOverwrite (dict
+  "enabled" true "name" (printf "%s-daily" $name)
+  "cron" "0 0 6 * * *" "immediate" false "suspend" false
+) (deepCopy $scheduleSpec)) }}
+{{- $_ := set $backup "monitoring" (mergeOverwrite (dict
+  "enabled" false "labels" dict "criticalSeverity" "critical"
+  "warningSeverity" "warning" "maxBackupAgeSeconds" 108000
+) (deepCopy $backupMonitoring)) }}
+{{- $restore := $spec.restore | default dict }}
+{{- $_ := set $state "backup" $backup }}
+{{- $_ := set $state "restore" $restore }}
+
+{{- if $backup.enabled }}
+  {{- /* Compare the applied CNPG identity too: optional fields can otherwise be
+         added after first use, bypassing a field-level oldSelf validation. */}}
+  {{- $prior := get ($.observed.resources | default dict) "cnpg-cluster" | default dict }}
+  {{- $priorResource := $prior.resource | default dict }}
+  {{- $priorManifest := ((($priorResource.status | default dict).atProvider | default dict).manifest | default dict) }}
+  {{- range (($priorManifest.spec | default dict).plugins | default list) }}
+    {{- if eq .name "barman-cloud.cloudnative-pg.io" }}
+      {{- $parameters := .parameters | default dict }}
+      {{- if or (ne ($parameters.serverName | default $name) $backup.serverName) (ne ($parameters.barmanObjectName | default "") $backup.objectStoreName) }}
+        {{- fail "backup archive identity differs from the observed cluster; preserve serverName and objectStoreName during adoption" }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+  {{- if not $backup.existingObjectStore }}
+    {{- if not (regexMatch "^s3://[^/]+(/.*)?$" ($backup.destinationPath | default "")) }}
+      {{- fail "backup.enabled requires an S3 destinationPath or existingObjectStore=true" }}
+    {{- end }}
+    {{- $creds := $backup.credentials | default dict }}
+    {{- $iam := $creds.inheritFromIAMRole | default false }}
+    {{- $keys := and $creds.accessKeyId $creds.secretAccessKey }}
+    {{- if or (and $iam (or $creds.accessKeyId $creds.secretAccessKey $creds.sessionToken)) (not (or $iam $keys)) }}
+      {{- fail "backup.credentials requires exactly one of inheritFromIAMRole=true or accessKeyId/secretAccessKey selectors" }}
+    {{- end }}
+  {{- else if or $backup.destinationPath $backup.credentials }}
+    {{- fail "existingObjectStore is observe-only: omit backup.destinationPath and credentials" }}
+  {{- end }}
+  {{- if ne (len (regexSplit "\\s+" (trim $backup.schedule.cron) -1)) 6 }}
+    {{- fail "backup.schedule.cron must contain six UTC cron fields, including seconds" }}
+  {{- end }}
+  {{- if $state.scaleToZero.enabled }}
+    {{- $_ := set $state "warnings" (append $state.warnings "Backups require a running database: scale-to-zero can suspend scheduled backups and WAL archiving. Disable hibernation for a continuous recovery objective.") }}
+  {{- end }}
+{{- end }}
+{{- if $restore }}
+  {{- if $backup.enabled }}
+    {{- fail "restore clusters cannot enable backups: keep the source archive read-only" }}
+  {{- end }}
+  {{- if or (not $restore.source.objectStoreName) (not $restore.source.serverName) (eq $restore.source.serverName $name) }}
+    {{- fail "restore requires source.objectStoreName and an explicit source.serverName different from the new cluster name" }}
+  {{- end }}
+  {{- $target := $restore.target | default dict }}
+  {{- if and $target.targetTime $target.targetName }}
+    {{- fail "restore.target must choose targetTime or targetName" }}
+  {{- end }}
+  {{- if and (or $target.targetTime $target.targetName) (not $target.backupID) }}
+    {{- fail "time or named recovery requires restore.target.backupID" }}
+  {{- end }}
+{{- end }}
+{{- if or $backup.enabled $restore }}
+  {{- if $cnpg.overrideAllValues }}
+    {{- fail "typed backup/restore cannot be combined with cnpg.overrideAllValues" }}
+  {{- end }}
+  {{- if or (hasKey $cnpg.values "backup") (hasKey $cnpg.values "bootstrap") (hasKey $cnpg.values "externalClusters") }}
+    {{- fail "typed backup/restore owns bootstrap, backup and externalClusters; remove these cnpg.values fields" }}
+  {{- end }}
+{{- end }}

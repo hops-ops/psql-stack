@@ -1,0 +1,57 @@
+# code: language=yaml
+{{- $backup := $state.backup }}
+{{- if and $backup.enabled $backup.schedule.enabled }}
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: {{ $state.name }}-backup-schedule
+  annotations:
+    {{ setResourceNameAnnotation "backup-schedule" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  managementPolicies: {{ $backup.managementPolicies | toJson }}
+  forProvider:
+    manifest:
+      apiVersion: postgresql.cnpg.io/v1
+      kind: ScheduledBackup
+      metadata:
+        name: {{ $backup.schedule.name }}
+        namespace: {{ $state.namespace }}
+        labels: {{ $state.labels | toJson }}
+      spec:
+        schedule: {{ $backup.schedule.cron | quote }}
+        immediate: {{ $backup.schedule.immediate }}
+        suspend: {{ $backup.schedule.suspend }}
+        backupOwnerReference: none
+        cluster:
+          name: {{ $state.name }}
+        target: primary
+        method: plugin
+        pluginConfiguration:
+          name: barman-cloud.cloudnative-pg.io
+  providerConfigRef: {{ $state.kubernetesProviderConfigRef | toJson }}
+
+{{- if and $state.observed.cluster.ready $state.observed.backupSchedule.ready }}
+---
+apiVersion: protection.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  name: {{ $state.name }}-delete-backup-schedule-before-cluster
+  annotations:
+    {{ setResourceNameAnnotation "usage-schedule-cluster" }}
+  labels: {{ $state.labels | toJson }}
+spec:
+  replayDeletion: true
+  of:
+    apiVersion: kubernetes.m.crossplane.io/v1alpha1
+    kind: Object
+    resourceRef:
+      name: {{ $state.name }}-cnpg-cluster
+  by:
+    apiVersion: kubernetes.m.crossplane.io/v1alpha1
+    kind: Object
+    resourceRef:
+      name: {{ $state.name }}-backup-schedule
+{{- end }}
+{{- end }}

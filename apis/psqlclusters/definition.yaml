@@ -266,6 +266,225 @@ spec:
                     type: boolean
                     default: true
 
+              backup:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                    default: false
+                  objectStoreName:
+                    type: string
+                    description: ObjectStore name in the database namespace. Defaults to <cluster>-backups.
+                    minLength: 1
+                    x-kubernetes-validations:
+                    - rule: self == oldSelf
+                      message: Archive identity and restore targets are immutable; create a new cluster to restore.
+                  existingObjectStore:
+                    type: boolean
+                    default: false
+                    description: Observe an existing ObjectStore without changing or deleting it. Omit destination and credentials
+                      in this mode.
+                  serverName:
+                    type: string
+                    description: Archive server identity. Defaults to the database name. Preserve when adopting an existing archive.
+                    minLength: 1
+                    x-kubernetes-validations:
+                    - rule: self == oldSelf
+                      message: Archive identity and restore targets are immutable; create a new cluster to restore.
+                  destinationPath:
+                    type: string
+                    description: S3-compatible bucket/prefix. Bucket, encryption, access policy and lifecycle are managed separately.
+                    pattern: ^s3://[^/]+(/.*)?$
+                    x-kubernetes-validations:
+                    - rule: self == oldSelf
+                      message: Archive identity and restore targets are immutable; create a new cluster to restore.
+                  endpointURL:
+                    type: string
+                    description: Optional S3-compatible endpoint.
+                    pattern: ^https?://
+                  endpointCA:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                        minLength: 1
+                      key:
+                        type: string
+                        minLength: 1
+                    required:
+                    - name
+                    - key
+                  credentials:
+                    type: object
+                    properties:
+                      inheritFromIAMRole:
+                        type: boolean
+                        default: false
+                      accessKeyId:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                            minLength: 1
+                          key:
+                            type: string
+                            minLength: 1
+                        required:
+                        - name
+                        - key
+                      secretAccessKey:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                            minLength: 1
+                          key:
+                            type: string
+                            minLength: 1
+                        required:
+                        - name
+                        - key
+                      sessionToken:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                            minLength: 1
+                          key:
+                            type: string
+                            minLength: 1
+                        required:
+                        - name
+                        - key
+                    x-kubernetes-validations:
+                    - rule: '(has(self.inheritFromIAMRole) && self.inheritFromIAMRole) ? (!has(self.accessKeyId) && !has(self.secretAccessKey) && !has(self.sessionToken)) : (has(self.accessKeyId) && has(self.secretAccessKey))'
+                      message: Choose workload identity or an accessKeyId/secretAccessKey pair.
+                  retentionPolicy:
+                    type: string
+                    description: Barman recovery window, not bucket object expiration. Defaults to 30d.
+                    default: 30d
+                    pattern: ^[1-9][0-9]*[dwm]$
+                  compression:
+                    type: string
+                    default: gzip
+                    enum:
+                    - gzip
+                    - bzip2
+                    - snappy
+                    - lz4
+                  jobs:
+                    type: integer
+                    minimum: 1
+                    maximum: 32
+                    default: 2
+                  sidecar:
+                    type: object
+                    description: Barman instanceSidecarConfiguration override, e.g. resource requests/limits and environment variables.
+                    x-kubernetes-preserve-unknown-fields: true
+                  managementPolicies:
+                    type: array
+                    items:
+                      type: string
+                    default:
+                    - Observe
+                    - Create
+                    - Update
+                    - LateInitialize
+                    description: ObjectStore and ScheduledBackup policies. Default retains them on XR deletion. Include Delete
+                      only for disposable environments.
+                  schedule:
+                    type: object
+                    properties:
+                      enabled:
+                        type: boolean
+                        default: true
+                      name:
+                        type: string
+                        minLength: 1
+                        x-kubernetes-validations:
+                        - rule: self == oldSelf
+                          message: Archive identity and restore targets are immutable; create a new cluster to restore.
+                      cron:
+                        type: string
+                        description: Six-field CNPG cron, including seconds. Evaluated in UTC.
+                        default: 0 0 6 * * *
+                        pattern: ^\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+$
+                      immediate:
+                        type: boolean
+                        default: false
+                        description: Opt in to an immediate first backup. Enable only after the plugin is registered; otherwise
+                          the first attempt may fail.
+                      suspend:
+                        type: boolean
+                        default: false
+                    description: Daily UTC by default; immediate is deliberately false to avoid racing plugin rollout.
+                  monitoring:
+                    type: object
+                    properties:
+                      enabled:
+                        type: boolean
+                        default: false
+                      labels:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      criticalSeverity:
+                        type: string
+                        default: critical
+                      warningSeverity:
+                        type: string
+                        default: warning
+                      maxBackupAgeSeconds:
+                        type: integer
+                        minimum: 60
+                        default: 108000
+                    description: Optional PodMonitor and PrometheusRule in the database namespace. Requires Prometheus Operator
+                      CRDs. Labels select the consuming Prometheus; routing stays outside this package.
+                description: Opt-in continuous WAL archiving and scheduled physical backups via the Barman CNPG-I plugin.
+                x-kubernetes-validations:
+                - rule: '!has(self.enabled) || !self.enabled || (has(self.existingObjectStore) && self.existingObjectStore) ||
+                    (has(self.destinationPath) && has(self.credentials))'
+                  message: Enabled managed backups require destinationPath and credentials.
+                - rule: '!has(self.existingObjectStore) || !self.existingObjectStore || (!has(self.destinationPath) && !has(self.credentials))'
+                  message: An existing ObjectStore is observed; omit destinationPath and credentials.
+              restore:
+                type: object
+                properties:
+                  source:
+                    type: object
+                    properties:
+                      objectStoreName:
+                        type: string
+                        minLength: 1
+                      serverName:
+                        type: string
+                        description: Explicit source archive server identity; must differ from the new cluster name.
+                        minLength: 1
+                    required:
+                    - objectStoreName
+                    - serverName
+                  target:
+                    type: object
+                    properties:
+                      backupID:
+                        type: string
+                        pattern: ^[0-9]{8}T[0-9]{6}$
+                      targetTime:
+                        type: string
+                        format: date-time
+                      targetName:
+                        type: string
+                        minLength: 1
+                    x-kubernetes-validations:
+                    - rule: '!(has(self.targetTime) && has(self.targetName))'
+                      message: Choose targetTime or targetName.
+                    - rule: (!has(self.targetTime) && !has(self.targetName)) || has(self.backupID)
+                      message: An explicit base backupID is required for time or named recovery.
+                required:
+                - source
+                description: Bootstrap a NEW cluster from a pre-existing, read-only ObjectStore in the target namespace. Omit
+                  target for latest recovery. Source credentials must deny writes/deletes. Backups stay disabled on restores.
+
               # ============================================================
               # HA
               # ============================================================
@@ -298,6 +517,13 @@ spec:
                     description: Replaces the entire Cluster.spec — total escape hatch.
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
+            x-kubernetes-validations:
+            - rule: has(self.restore) == has(oldSelf.restore)
+              message: Restore is a bootstrap-only option; create a new PSQLCluster.
+            - rule: '!has(self.restore) || (has(oldSelf.restore) && self.restore == oldSelf.restore)'
+              message: Restore source and recovery target are immutable.
+            - rule: '!has(self.restore) || !has(self.backup) || !has(self.backup.enabled) || !self.backup.enabled'
+              message: Restores cannot enable archiving; use a distinct new archive when promoting.
             required:
             - clusterName
             - storage
@@ -308,6 +534,26 @@ spec:
               ready:
                 description: Overall readiness — true once the CNPG Cluster reaches `Cluster in healthy state` AND the ExternalSecret (if composed) is SecretSynced.
                 type: boolean
+              backup:
+                type: object
+                properties:
+                  phase:
+                    type: string
+                    enum:
+                    - Unconfigured
+                    - Initializing
+                    - Failing
+                    - Recoverable
+                  objectStoreName:
+                    type: string
+                  lastSuccessfulBackupTime:
+                    type: string
+                  lastFailedBackupTime:
+                    type: string
+                  firstRecoverabilityPoint:
+                    type: string
+                description: Observed Barman server recovery window plus archiver health. Recoverable means a base backup and
+                  recovery window are reported; it is not a measured recovery SLA. Staleness/telemetry loss are monitored separately.
               clusterPhase:
                 description: Current CNPG Cluster `.status.phase` (e.g. "Cluster in healthy state").
                 type: string

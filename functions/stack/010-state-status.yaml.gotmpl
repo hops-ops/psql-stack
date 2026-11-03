@@ -10,7 +10,7 @@
 # ==============================================================================
 
 {{- $checkReady := dict }}
-{{- range $key := list "cnpg-operator" "cnpg-scale-to-zero" "atlas-operator" "storageclass" "volumesnapshotclass" }}
+{{- range $key := list "cnpg-operator" "barman-cloud" "cnpg-scale-to-zero" "atlas-operator" "storageclass" "volumesnapshotclass" }}
   {{- $entry := get $observed $key | default dict }}
   {{- $resource := $entry.resource | default dict }}
   {{- $status := $resource.status | default dict }}
@@ -29,6 +29,7 @@
 {{- $state = set $state "observed" (dict
   "cnpg" (dict "ready" (get $checkReady "cnpg-operator"))
   "scaleToZeroPlugin" (dict "ready" (get $checkReady "cnpg-scale-to-zero"))
+  "backupPlugin" (dict "ready" (get $checkReady "barman-cloud"))
   "atlasOperator" (dict "ready" (get $checkReady "atlas-operator"))
   "storageClass" (dict "ready" (get $checkReady "storageclass"))
   "snapshotClass" (dict "ready" (get $checkReady "volumesnapshotclass"))
@@ -39,6 +40,7 @@
 # state and must not keep the aggregate readiness false.
 # ==============================================================================
 {{- $ready := and
+  (or (not $state.backupPlugin.enabled) $state.observed.backupPlugin.ready)
   $state.observed.cnpg.ready
   $state.observed.atlasOperator.ready
   (or (not $state.scaleToZeroPlugin.enabled) $state.observed.scaleToZeroPlugin.ready)

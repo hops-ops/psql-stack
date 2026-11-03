@@ -31,12 +31,18 @@ jobs:
           { "example": "examples/psqlstacks/standard.yaml",  "api_path": "apis/psqlstacks" },
           { "example": "examples/psqlclusters/minimal.yaml", "api_path": "apis/psqlclusters" },
           { "example": "examples/psqlclusters/standard.yaml","api_path": "apis/psqlclusters" },
+          { "example": "examples/psqlstacks/backups.yaml", "api_path": "apis/psqlstacks" },
+          { "example": "examples/psqlclusters/backups.yaml", "api_path": "apis/psqlclusters" },
+          { "example": "examples/psqlclusters/restore.yaml", "api_path": "apis/psqlclusters" },
           { "example": "examples/psqlbranches/same-namespace.yaml", "api_path": "apis/psqlbranches" }
         ]
       error_on_missing_schemas: true
 
   test:
     uses: hops-ops/workflows-crossplane/.github/workflows/test.yaml@v3.2.0
+
+  backup-recovery:
+    uses: ./.github/workflows/backup-tests.yaml
 
   e2e:
     uses: hops-ops/workflows-crossplane/.github/workflows/e2e.yaml@v3.2.0
@@ -78,6 +84,7 @@ jobs:
       - validate
       - test
       - e2e
+      - backup-recovery
     uses: unbounded-tech/workflow-vnext-tag/.github/workflows/workflow.yaml@v1.22.3
     secrets:
       DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}

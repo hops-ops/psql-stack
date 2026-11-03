@@ -17,6 +17,7 @@ If you need replicated CoW storage (true block-level branches with delta-only ec
 |---|---|---|
 | **CNPG operator** | always-on | The CNCF Postgres operator. CRDs include `Cluster`, `Backup`, `Pooler`, `ScheduledBackup`. |
 | **cnpg-i-scale-to-zero plugin** | on (`spec.scaleToZeroPlugin.enabled: true`) | Auto-hibernates idle CNPG `Cluster`s. **Requires cert-manager** (provided by [`aws-cert-stack`](../../aws/cert/)). |
+| **Barman Cloud backup plugin** | off (`spec.backupPlugin.enabled: false`) | Shared CNPG-I plugin for continuous WAL archiving and physical backups; requires cert-manager. |
 | **Atlas operator** | always-on | Declarative schema migrations via `AtlasMigration` / `AtlasSchema` CRDs. |
 | **StorageClass** | on (`spec.storageClass.enabled: true`) | Named `psql` by default. Provisioner: `ebs.csi.eks.amazonaws.com` with `type: gp3`. PSQLCluster + PSQLBranch reference it as their default `spec.storage.class`. |
 | **VolumeSnapshotClass** | on (`spec.snapshotClass.enabled: true`) | Named `psql` by default. Driver matches `storageClass.provisioner`. PSQLBranch references it for snapshot/fork. |
@@ -180,6 +181,7 @@ spec:
 | `scaleToZeroPlugin.enabled` | bool | `true` | Install the plugin (zero-cost when no `Cluster` opts in) |
 | `scaleToZeroPlugin.version` | string | `v0.1.7` | Plugin release tag |
 | `scaleToZeroPlugin.namespace` | string | shared `namespace` | Override |
+| **Barman Cloud backup plugin** | off (`spec.backupPlugin.enabled: false`) | Shared CNPG-I plugin for continuous WAL archiving and physical backups; requires cert-manager. |
 | **Atlas operator** | | | |
 | `atlasOperator.name` | string | `atlas-operator` | Helm release name |
 | `atlasOperator.namespace` | string | shared `namespace` | Override |
@@ -232,3 +234,10 @@ make render:standard    # Render a single example
 ## License
 
 Apache-2.0
+
+## Backups and recovery
+
+Enable `PSQLStack.spec.backupPlugin` once, then configure `PSQLCluster.spec.backup`
+per database. See the [backup, recovery and adoption guide](docs/backups.md) for
+credentials, six-field UTC schedules, recovery-window status, primary-only alerts,
+read-only restore examples, and migration without changing existing archives.

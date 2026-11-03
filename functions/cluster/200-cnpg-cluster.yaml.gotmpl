@@ -119,7 +119,49 @@ spec:
           {{- end }}
           {{- $_ := set $clusterSpec "affinity" $affinity }}
         {{- end }}
-        {{- $mergedClusterSpec := mergeOverwrite $clusterSpec ($cnpg.values | default dict) }}
+        {{- $mergedClusterSpec := mergeOverwrite $clusterSpec (deepCopy ($cnpg.values | default dict)) }}
+        {{- if or $state.backup.enabled $state.restore }}
+        {{- $plugins := list }}
+        {{- range ($mergedClusterSpec.plugins | default list) }}
+          {{- if and $state.restore (.isWALArchiver | default false) }}
+            {{- fail "restore cannot include a WAL archiver through cnpg.values.plugins" }}
+          {{- end }}
+          {{- if and $state.backup.enabled (.isWALArchiver | default false) (ne .name "barman-cloud.cloudnative-pg.io") }}
+            {{- fail "typed backup owns the WAL archiver; remove the competing cnpg.values plugin" }}
+          {{- end }}
+          {{- if and (eq .name "barman-cloud.cloudnative-pg.io") (or $state.backup.enabled $state.restore) }}
+            {{- fail "Remove the Barman entry from cnpg.values.plugins before enabling typed backup/restore" }}
+          {{- end }}
+          {{- if not (and $state.scaleToZero.enabled (eq .name "cnpg-i-scale-to-zero.xata.io")) }}
+            {{- $plugins = append $plugins . }}
+          {{- end }}
+        {{- end }}
+        {{- if $state.scaleToZero.enabled }}
+          {{- $plugins = append $plugins (dict "name" "cnpg-i-scale-to-zero.xata.io" "enabled" true) }}
+        {{- end }}
+        {{- if $state.backup.enabled }}
+          {{- $plugins = append $plugins (dict "name" "barman-cloud.cloudnative-pg.io" "isWALArchiver" true "parameters" (dict "barmanObjectName" $state.backup.objectStoreName "serverName" $state.backup.serverName)) }}
+        {{- end }}
+        {{- if $plugins }}
+          {{- $_ := set $mergedClusterSpec "plugins" $plugins }}
+        {{- end }}
+        {{- if $state.restore }}
+          {{- /* Recovery reconciles application credentials after promotion,
+                 using the same database/owner/Secret contract as initdb. */}}
+          {{- $recovery := set (deepCopy $initdb) "source" "backup-source" }}
+          {{- with $state.restore.target }}
+            {{- $_ := set $recovery "recoveryTarget" . }}
+          {{- end }}
+          {{- $_ := set $mergedClusterSpec "bootstrap" (dict "recovery" $recovery) }}
+          {{- $_ := set $mergedClusterSpec "externalClusters" (list (dict
+            "name" "backup-source"
+            "plugin" (dict "name" "barman-cloud.cloudnative-pg.io" "parameters" (dict
+              "barmanObjectName" $state.restore.source.objectStoreName
+              "serverName" $state.restore.source.serverName
+            ))
+          )) }}
+        {{- end }}
+        {{- end }}
         {{- toYaml $mergedClusterSpec | nindent 8 }}
       {{- end }}
   providerConfigRef:

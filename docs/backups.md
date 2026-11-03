@@ -217,7 +217,7 @@ Discord routing and database volumes unchanged during that migration.
 
 `make test` runs composition contracts. `python3 tests/backup/render.py` runs the
 same backup contracts through the native renderer, including rejected inputs.
-`make backup-e2e` creates and removes its own kind cluster, installs the actual
+`make backup-e2e` requires PyYAML and boto3 and creates and removes its own kind cluster, installs the actual
 controllers, seeds data, backs it up, modifies it, then verifies latest, time and
 named recovery with write-denied source credentials. It writes evidence under
 `_output/backup-evidence/`; it never targets the current kubecontext. The existing

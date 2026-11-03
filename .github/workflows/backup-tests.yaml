@@ -26,7 +26,7 @@ jobs:
         install_only: true
         version: v0.26.0
     - name: Install test dependencies
-      run: python3 -m pip install 'PyYAML==6.0.3'
+      run: python3 -m pip install 'PyYAML==6.0.3' 'boto3==1.40.10'
     - name: Render and reject conflicting policies
       run: make backup-test
     - name: Seeded latest and point-in-time recovery

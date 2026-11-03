@@ -12,6 +12,13 @@ import subprocess
 import sys
 import tempfile
 import time
+import socket
+import urllib.request
+import boto3
+from botocore.auth import S3SigV4Auth
+from botocore.awsrequest import AWSRequest
+from botocore.credentials import Credentials
+from botocore.exceptions import ClientError
 import yaml
 
 CONTEXT = sys.argv[1]
@@ -119,25 +126,42 @@ try:
         PROOF.setdefault('charts', []).append(f['chart'])
     # These credentials exist only inside this disposable fixture.
     apply({'apiVersion':'v1','kind':'Secret','metadata':{'name':'object-store','namespace':NS},'stringData':{'ACCESS_KEY_ID':'drill-root','ACCESS_SECRET_KEY':'drill-root-password','RESTORE_KEY_ID':'drill-restore','RESTORE_SECRET_KEY':'drill-restore-password'}})
-    apply({'apiVersion':'apps/v1','kind':'Deployment','metadata':{'name':'object-store','namespace':NS},'spec':{'replicas':1,'selector':{'matchLabels':{'app':'object-store'}},'template':{'metadata':{'labels':{'app':'object-store'}},'spec':{'containers':[{'name':'minio','image':'quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z','args':['server','/data'],'env':[{'name':'MINIO_ROOT_USER','value':'drill-root'},{'name':'MINIO_ROOT_PASSWORD','value':'drill-root-password'}],'ports':[{'containerPort':9000}],'resources':{'requests':{'cpu':'100m','memory':'256Mi'}}}]}}}})
+    apply({'apiVersion':'apps/v1','kind':'Deployment','metadata':{'name':'object-store','namespace':NS},'spec':{'replicas':1,'selector':{'matchLabels':{'app':'object-store'}},'template':{'metadata':{'labels':{'app':'object-store'}},'spec':{'securityContext':{'fsGroup':10001},'volumes':[{'name':'data','emptyDir':{}}],'containers':[{'volumeMounts':[{'name':'data','mountPath':'/data'}],'name':'rustfs','image':'rustfs/rustfs:1.0.3','args':['/data'],'env':[{'name':'RUSTFS_ACCESS_KEY','value':'drill-root'},{'name':'RUSTFS_SECRET_KEY','value':'drill-root-password'}],'ports':[{'containerPort':9000}],'resources':{'requests':{'cpu':'100m','memory':'256Mi'}}}]}}}})
     apply({'apiVersion':'v1','kind':'Service','metadata':{'name':'object-store','namespace':NS},'spec':{'selector':{'app':'object-store'},'ports':[{'port':9000,'targetPort':9000}]}})
-    policy = {'Version':'2012-10-17','Statement':[{'Effect':'Allow','Action':['s3:GetBucketLocation','s3:ListBucket'],'Resource':['arn:aws:s3:::backups']},{'Effect':'Allow','Action':['s3:GetObject'],'Resource':['arn:aws:s3:::backups/*']}]}
-    command = '''set -eu
-until mc alias set fixture http://object-store:9000 drill-root drill-root-password; do sleep 2; done
-mc mb --ignore-existing fixture/backups
-mc admin user add fixture drill-restore drill-restore-password
-printf '%s' "$READ_POLICY" >/tmp/read-policy.json
-mc admin policy create fixture restore-read-only /tmp/read-policy.json
-mc admin policy attach fixture restore-read-only --user drill-restore
-mc alias set readonly http://object-store:9000 drill-restore drill-restore-password
-printf guard >/tmp/guard
-mc cp /tmp/guard fixture/backups/guard
-if mc cp /tmp/guard readonly/backups/forbidden-write; then exit 1; fi
-if mc rm readonly/backups/guard; then exit 1; fi
-mc stat readonly/backups/guard
-'''
-    apply({'apiVersion':'batch/v1','kind':'Job','metadata':{'name':'prepare-store','namespace':NS},'spec':{'backoffLimit':2,'template':{'spec':{'restartPolicy':'Never','containers':[{'name':'prepare','image':'quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z','command':['/bin/sh','-c',command],'env':[{'name':'READ_POLICY','value':json.dumps(policy)}]}]}}}})
-    kube('-n', NS, 'wait', '--for=condition=complete', 'job/prepare-store', '--timeout=180s', timeout=200)
+    # RustFS provides a maintained S3 fixture and IAM policies. Provision through
+    # its signed admin API, then verify denied source writes and deletes via S3.
+    kube('-n',NS,'rollout','status','deployment/object-store','--timeout=180s',timeout=200)
+    with socket.socket() as sock:
+        sock.bind(('127.0.0.1',0)); port=sock.getsockname()[1]
+    forward=subprocess.Popen(['kubectl','--context',CONTEXT,'-n',NS,'port-forward','service/object-store',f'{port}:9000'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+    try:
+        endpoint=f'http://127.0.0.1:{port}'
+        def s3(key,secret):
+            return boto3.client('s3',endpoint_url=endpoint,aws_access_key_id=key,aws_secret_access_key=secret,region_name='us-east-1',config=boto3.session.Config(s3={'addressing_style':'path'},connect_timeout=3,read_timeout=10,retries={'max_attempts':1}))
+        writer=s3('drill-root','drill-root-password')
+        wait(lambda: writer.list_buckets() is not None, 'S3 fixture ready',timeout=60)
+        writer.create_bucket(Bucket='backups')
+        def admin(path,method,body):
+            data=json.dumps(body).encode()
+            req=AWSRequest(method=method,url=endpoint+'/rustfs/admin/v3/'+path,data=data,headers={'Content-Type':'application/json'})
+            S3SigV4Auth(Credentials('drill-root','drill-root-password'),'s3','us-east-1').add_auth(req)
+            with urllib.request.urlopen(urllib.request.Request(req.url,data=data,headers=dict(req.headers),method=method),timeout=30) as response:
+                assert response.status in [200,204]
+        admin('add-user?accessKey=drill-restore','PUT',{'secretKey':'drill-restore-password','status':'enabled'})
+        admin('idp/builtin/policy/attach','POST',{'policies':['readonly'],'user':'drill-restore'})
+        reader=s3('drill-restore','drill-restore-password')
+        writer.put_object(Bucket='backups',Key='guard',Body=b'guard')
+        assert reader.get_object(Bucket='backups',Key='guard')['Body'].read()==b'guard'
+        for action in [lambda:reader.put_object(Bucket='backups',Key='forbidden-write',Body=b'guard'),lambda:reader.delete_object(Bucket='backups',Key='guard')]:
+            try:
+                action()
+            except ClientError as e:
+                assert e.response['ResponseMetadata']['HTTPStatusCode']==403,e.response
+            else:
+                raise AssertionError('Read-only credentials permitted an archive mutation')
+    finally:
+        forward.terminate()
+        forward.wait(timeout=15)
     PROOF['read_only_source_permissions_verified'] = True
     backup = {'enabled':True, 'destinationPath':'s3://backups/drill', 'endpointURL':'http://object-store:9000', 'credentials':{'accessKeyId':{'name':'object-store','key':'ACCESS_KEY_ID'},'secretAccessKey':{'name':'object-store','key':'ACCESS_SECRET_KEY'}}, 'schedule':{'enabled':False}, 'managementPolicies':['*']}
     resources = render('PSQLCluster', 'seeded', cluster_spec(backup=backup))

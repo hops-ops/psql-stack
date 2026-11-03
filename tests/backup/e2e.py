@@ -161,10 +161,16 @@ try:
             with urllib.request.urlopen(urllib.request.Request(req.url,data=data,headers=dict(req.headers),method=method),timeout=30) as response:
                 assert response.status in [200,204]
         admin('add-user?accessKey=drill-restore','PUT',{'secretKey':'drill-restore-password','status':'enabled'})
-        admin('idp/builtin/policy/attach','POST',{'policies':['readonly'],'user':'drill-restore'})
+        read_policy={'Version':'2012-10-17','Statement':[
+            {'Effect':'Allow','Action':['s3:GetBucketLocation','s3:ListBucket'],'Resource':['arn:aws:s3:::backups']},
+            {'Effect':'Allow','Action':['s3:GetObject'],'Resource':['arn:aws:s3:::backups/*']},
+        ]}
+        admin('add-canned-policy?name=restore-read-only','PUT',read_policy)
+        admin('idp/builtin/policy/attach','POST',{'policies':['restore-read-only'],'user':'drill-restore'})
         reader=s3('drill-restore','drill-restore-password')
         writer.put_object(Bucket='backups',Key='guard',Body=b'guard')
         assert reader.get_object(Bucket='backups',Key='guard')['Body'].read()==b'guard'
+        reader.list_objects_v2(Bucket='backups',Prefix='drill/')
         for action in [lambda:reader.put_object(Bucket='backups',Key='forbidden-write',Body=b'guard'),lambda:reader.delete_object(Bucket='backups',Key='guard')]:
             try:
                 action()
@@ -191,6 +197,8 @@ try:
     time.sleep(2)
     sql('seeded', "UPDATE recovery_proof SET value='after' WHERE id=1; INSERT INTO recovery_proof VALUES(2, 'new');")
     archive('seeded')
+    PROOF['base_backup'] = {'id':backup_id,'startedAt':done['status'].get('startedAt'),'stoppedAt':done['status'].get('stoppedAt')}
+    PROOF['time_target'] = target_time
     wait(lambda: get('objectstores.barmancloud.cnpg.io','seeded-backups').get('status',{}).get('serverRecoveryWindow',{}).get('seeded',{}).get('firstRecoverabilityPoint'), 'Barman recovery window observed',timeout=300)
     observed=[]
     for key,kind,name in [('cnpg-cluster','clusters.postgresql.cnpg.io','seeded'),('backup-objectstore','objectstores.barmancloud.cnpg.io','seeded-backups')]:
@@ -215,8 +223,6 @@ try:
         assert sql(name, 'SELECT pg_is_in_recovery();') == 'f'
         PROOF['restores'][mode] = {'value': result, 'expected': expected, 'ready': True}
     assert sql('seeded', "SELECT string_agg(id::text || ':' || value, ',' ORDER BY id) FROM recovery_proof;") == '1:after,2:new'
-    PROOF['base_backup'] = {'id':backup_id,'startedAt':done['status'].get('startedAt'),'stoppedAt':done['status'].get('stoppedAt')}
-    PROOF['time_target'] = target_time
     PROOF['source_intact'] = True
     PROOF['postgresql_version'] = sql('seeded','SELECT version();')
     PROOF['images'] = json.loads(kube('get','pods','-A','-o','json'))

@@ -146,7 +146,9 @@ spec:
           {{- $_ := set $mergedClusterSpec "plugins" $plugins }}
         {{- end }}
         {{- if $state.restore }}
-          {{- $recovery := dict "source" "backup-source" }}
+          {{- /* Recovery reconciles application credentials after promotion,
+                 using the same database/owner/Secret contract as initdb. */}}
+          {{- $recovery := set (deepCopy $initdb) "source" "backup-source" }}
           {{- with $state.restore.target }}
             {{- $_ := set $recovery "recoveryTarget" . }}
           {{- end }}

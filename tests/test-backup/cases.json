@@ -1358,5 +1358,94 @@
         }
       ]
     }
+  },
+  {
+    "metadata": {
+      "name": "restore-custom-application-credentials"
+    },
+    "spec": {
+      "compositionPath": "apis/psqlclusters/composition.yaml",
+      "xrdPath": "apis/psqlclusters/definition.yaml",
+      "timeoutSeconds": 90,
+      "validate": false,
+      "xr": {
+        "apiVersion": "hops.ops.com.ai/v1alpha1",
+        "kind": "PSQLCluster",
+        "metadata": {
+          "name": "app-db",
+          "namespace": "databases"
+        },
+        "spec": {
+          "clusterName": "production",
+          "storage": {
+            "size": "10Gi"
+          },
+          "restore": {
+            "source": {
+              "objectStoreName": "source-readonly",
+              "serverName": "source-db"
+            },
+            "target": {}
+          },
+          "app": {
+            "database": "customer_db",
+            "role": "customer_owner",
+            "secretName": "customer-credentials"
+          }
+        }
+      },
+      "assertResources": [
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-cnpg-cluster"
+          },
+          "spec": {
+            "forProvider": {
+              "manifest": {
+                "spec": {
+                  "bootstrap": {
+                    "recovery": {
+                      "source": "backup-source",
+                      "database": "customer_db",
+                      "owner": "customer_owner",
+                      "secret": {
+                        "name": "customer-credentials"
+                      }
+                    }
+                  },
+                  "externalClusters": [
+                    {
+                      "name": "backup-source",
+                      "plugin": {
+                        "name": "barman-cloud.cloudnative-pg.io",
+                        "parameters": {
+                          "barmanObjectName": "source-readonly",
+                          "serverName": "source-db"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "apiVersion": "hops.ops.com.ai/v1alpha1",
+          "kind": "PSQLCluster",
+          "metadata": {
+            "name": "app-db"
+          },
+          "status": {
+            "app": {
+              "database": "customer_db",
+              "secretName": "customer-credentials"
+            }
+          }
+        }
+      ]
+    }
   }
 ]

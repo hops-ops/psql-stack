@@ -5,6 +5,7 @@ Installs actual CNPG/Barman controllers. The existing up E2E suite separately
 checks Crossplane/provider reconciliation; this drill checks the physical data.
 """
 import datetime
+import base64
 import json
 import os
 from pathlib import Path
@@ -25,6 +26,8 @@ CONTEXT = sys.argv[1]
 if not CONTEXT.startswith('kind-psql-backup-e2e-'):
     raise SystemExit('Refusing a non-disposable context: ' + CONTEXT)
 NS = 'backup-drill'
+DATABASE = 'drill_db'
+APP_ROLE = 'drill_owner'
 ROOT = Path(__file__).resolve().parents[2]
 EVIDENCE = Path(os.environ.get('BACKUP_EVIDENCE_DIR', ROOT / '_output/backup-evidence'))
 EVIDENCE.mkdir(parents=True, exist_ok=True)
@@ -79,13 +82,23 @@ def render(kind, name, spec, observed=None, include_status=False):
 
 def cluster_spec(**extra):
     return {'clusterName': 'disposable', 'storage': {'size': '1Gi', 'class': 'standard'},
+        'app': {'database': DATABASE, 'role': APP_ROLE},
         'monitoring': {'enabled': False}, 'branching': {'enabled': False}, **extra}
 
 def primary(name):
     return get('clusters.postgresql.cnpg.io', name)['status']['currentPrimary']
 
 def sql(name, statement):
-    return kube('-n', NS, 'exec', primary(name), '-c', 'postgres', '--', 'psql', '-U', 'postgres', '-d', 'app', '-At', '-v', 'ON_ERROR_STOP=1', '-c', statement).strip()
+    return kube('-n', NS, 'exec', primary(name), '-c', 'postgres', '--', 'psql', '-U', 'postgres', '-d', DATABASE, '-At', '-v', 'ON_ERROR_STOP=1', '-c', statement).strip()
+
+def app_sql(name, statement, secret_name=None):
+    secret=get('secret',secret_name or name+'-app')['data']
+    user=base64.b64decode(secret['username']).decode()
+    password=base64.b64decode(secret['password']).decode()
+    # Pass the credential on stdin; never put it into command output or argv.
+    return kube('-n',NS,'exec','-i',primary(name),'-c','postgres','--','sh','-c',
+        'IFS= read -r PGPASSWORD; export PGPASSWORD; exec psql -h 127.0.0.1 -U "$1" -d "$2" -At -v ON_ERROR_STOP=1 -c "$3"',
+        'app-connection',user,DATABASE,statement,input=password+'\n').strip()
 
 def ready(name):
     return any(c['type'] == 'Ready' and c['status'] == 'True' for c in get('clusters.postgresql.cnpg.io', name).get('status', {}).get('conditions', []))
@@ -196,7 +209,8 @@ try:
         apply(obj['spec']['forProvider']['manifest'])
     wait(lambda: ready('seeded'), 'Seeded database ready')
     wait(lambda: any(p['name'] == 'barman-cloud.cloudnative-pg.io' for p in get('clusters.postgresql.cnpg.io','seeded').get('status',{}).get('pluginStatus',[])), 'Barman registered')
-    sql('seeded', "CREATE TABLE recovery_proof(id integer PRIMARY KEY, value text NOT NULL); INSERT INTO recovery_proof VALUES (1, 'before');")
+    wait(lambda: app_sql('seeded', 'SELECT current_user;') == APP_ROLE, 'Source application credentials ready',timeout=120)
+    sql('seeded', f"SET ROLE {APP_ROLE}; CREATE TABLE recovery_proof(id integer PRIMARY KEY, value text NOT NULL); INSERT INTO recovery_proof VALUES (1, 'before');")
     apply({'apiVersion':'postgresql.cnpg.io/v1','kind':'Backup','metadata':{'name':'seeded-base','namespace':NS},'spec':{'cluster':{'name':'seeded'},'target':'primary','method':'plugin','pluginConfiguration':{'name':'barman-cloud.cloudnative-pg.io'}}})
     done = wait(lambda: (b if b.get('status',{}).get('phase') == 'completed' else False) if (b := get('backups.postgresql.cnpg.io','seeded-base')) else False, 'Physical base backup completed')
     backup_id = done['status']['backupId']
@@ -219,7 +233,13 @@ try:
     apply(readonly)
     for mode, target in [('latest', {}), ('time', {'backupID':backup_id,'targetTime':target_time}), ('named', {'backupID':backup_id,'targetName':'before_change'})]:
         name = 'recovered-' + mode
-        rendered = render('PSQLCluster', name, cluster_spec(restore={'source':{'objectStoreName':'source-readonly','serverName':'seeded'},'target':target}))
+        spec=cluster_spec(restore={'source':{'objectStoreName':'source-readonly','serverName':'seeded'},'target':target})
+        secret_name=name+'-app'
+        if mode == 'latest':
+            secret_name=name+'-credentials'
+            apply({'apiVersion':'v1','kind':'Secret','metadata':{'name':secret_name,'namespace':NS},'type':'kubernetes.io/basic-auth','stringData':{'username':APP_ROLE,'password':'drill-restored-password'}})
+            spec['app']['secretName']=secret_name
+        rendered = render('PSQLCluster', name, spec)
         manifest = next(o['spec']['forProvider']['manifest'] for o in rendered if o['spec']['forProvider']['manifest']['kind']=='Cluster')
         assert 'initdb' not in manifest['spec']['bootstrap']
         assert not any(p['name']=='barman-cloud.cloudnative-pg.io' for p in manifest['spec'].get('plugins',[]))
@@ -229,7 +249,8 @@ try:
         expected = '1:after,2:new' if mode == 'latest' else '1:before'
         assert result == expected, (mode, result, expected)
         assert sql(name, 'SELECT pg_is_in_recovery();') == 'f'
-        PROOF['restores'][mode] = {'value': result, 'expected': expected, 'ready': True}
+        wait(lambda: app_sql(name,"SELECT string_agg(id::text || ':' || value, ',' ORDER BY id) FROM recovery_proof;",secret_name)==expected, 'Application credentials verified: '+mode,timeout=120)
+        PROOF['restores'][mode] = {'value': result, 'expected': expected, 'ready': True,'application_credentials_verified':True,'credential_mode':'provided' if mode=='latest' else 'generated'}
     assert sql('seeded', "SELECT string_agg(id::text || ':' || value, ',' ORDER BY id) FROM recovery_proof;") == '1:after,2:new'
     PROOF['source_intact'] = True
     PROOF['postgresql_version'] = sql('seeded','SELECT version();')

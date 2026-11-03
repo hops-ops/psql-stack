@@ -123,7 +123,11 @@ The XR observes this ObjectStore without updating or deleting it. The plugin's
 Omit `restore.target` for latest available recovery. Set `targetTime` or
 `targetName` with an explicit `backupID` for point-in-time recovery. The base backup
 must precede the target, and the required WAL must be archived before restoring.
-The source and target are immutable once the claim is created. Backups cannot be
+Set `app.database` and `app.role` to the source application names. After promotion,
+CNPG reconciles these credentials in the restored cluster. Supply `app.secretName`
+(or `app.externalSecret`) to use your chosen credentials, or omit them to generate
+a new Secret. Source Kubernetes Secrets are managed separately from the physical
+backup. The source and target are immutable once the claim is created. Backups cannot be
 enabled on recovery claims; no WAL archiver is rendered. A restored database can
 accept SQL writes after recovery completes, but cannot modify the source archive
 using its read-only credentials. Promotion and a distinct writable archive require

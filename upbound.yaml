@@ -6,15 +6,15 @@ spec:
   dependsOn:
   - apiVersion: pkg.crossplane.io/v1
     kind: Function
-    package: xpkg.crossplane.io/crossplane-contrib/function-auto-ready
+    package: ghcr.io/crossplane-contrib/function-auto-ready
     version: ^v0
   - apiVersion: pkg.crossplane.io/v1
     kind: Provider
-    package: xpkg.crossplane.io/crossplane-contrib/provider-helm
+    package: ghcr.io/crossplane-contrib/provider-helm
     version: ^v1
   - apiVersion: pkg.crossplane.io/v1
     kind: Provider
-    package: xpkg.crossplane.io/crossplane-contrib/provider-kubernetes
+    package: ghcr.io/crossplane-contrib/provider-kubernetes
     version: ^v1
   description: PostgreSQL stack deploying CloudNativePG, the cnpg-i-scale-to-zero
     plugin, optional Barman Cloud physical backup support, and the Atlas Operator.

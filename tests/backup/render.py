@@ -71,6 +71,10 @@ reject('full-override-conflict',lambda s:s.update(cnpg={'overrideAllValues':{'in
 for field in ['bootstrap','externalClusters','backup']:
     reject('passthrough-'+field,lambda s,f=field:s.update(cnpg={'values':{f:{'conflict':True}}}),'typed backup/restore owns')
 reject('duplicate-barman-plugin',lambda s:s.update(cnpg={'values':{'plugins':[{'name':'barman-cloud.cloudnative-pg.io'}]}}),'Remove the Barman')
+identity=copy.deepcopy(next(c['spec'] for c in CASES if c['metadata']['name']=='existing-applied-archive-identity'))
+identity['xr']['spec']['backup']['serverName']='different-server'
+invalid.append(('archive-identity-change',identity,'archive identity differs'))
+reject('competing-wal-plugin',lambda s:s.update(cnpg={'values':{'plugins':[{'name':'other.example','isWALArchiver':True}]}}),'owns the WAL archiver')
 restore_case=copy.deepcopy(next(c['spec'] for c in CASES if c['metadata']['name']=='restore-latest'))
 for name, change, message in [
     ('same-source-identity',lambda s:s['restore']['source'].update(serverName='app-db'),'different from the new cluster'),

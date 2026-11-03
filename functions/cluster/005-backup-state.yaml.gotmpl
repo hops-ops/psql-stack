@@ -25,6 +25,19 @@
 {{- $_ := set $state "restore" $restore }}
 
 {{- if $backup.enabled }}
+  {{- /* Compare the applied CNPG identity too: optional fields can otherwise be
+         added after first use, bypassing a field-level oldSelf validation. */}}
+  {{- $prior := get ($.observed.resources | default dict) "cnpg-cluster" | default dict }}
+  {{- $priorResource := $prior.resource | default dict }}
+  {{- $priorManifest := ((($priorResource.status | default dict).atProvider | default dict).manifest | default dict) }}
+  {{- range (($priorManifest.spec | default dict).plugins | default list) }}
+    {{- if eq .name "barman-cloud.cloudnative-pg.io" }}
+      {{- $parameters := .parameters | default dict }}
+      {{- if or (ne ($parameters.serverName | default $name) $backup.serverName) (ne ($parameters.barmanObjectName | default "") $backup.objectStoreName) }}
+        {{- fail "backup archive identity differs from the observed cluster; preserve serverName and objectStoreName during adoption" }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
   {{- if not $backup.existingObjectStore }}
     {{- if not (regexMatch "^s3://[^/]+(/.*)?$" ($backup.destinationPath | default "")) }}
       {{- fail "backup.enabled requires an S3 destinationPath or existingObjectStore=true" }}

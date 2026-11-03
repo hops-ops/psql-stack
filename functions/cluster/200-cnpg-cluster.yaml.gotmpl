@@ -120,10 +120,14 @@ spec:
           {{- $_ := set $clusterSpec "affinity" $affinity }}
         {{- end }}
         {{- $mergedClusterSpec := mergeOverwrite $clusterSpec (deepCopy ($cnpg.values | default dict)) }}
+        {{- if or $state.backup.enabled $state.restore }}
         {{- $plugins := list }}
         {{- range ($mergedClusterSpec.plugins | default list) }}
           {{- if and $state.restore (.isWALArchiver | default false) }}
             {{- fail "restore cannot include a WAL archiver through cnpg.values.plugins" }}
+          {{- end }}
+          {{- if and $state.backup.enabled (.isWALArchiver | default false) (ne .name "barman-cloud.cloudnative-pg.io") }}
+            {{- fail "typed backup owns the WAL archiver; remove the competing cnpg.values plugin" }}
           {{- end }}
           {{- if and (eq .name "barman-cloud.cloudnative-pg.io") (or $state.backup.enabled $state.restore) }}
             {{- fail "Remove the Barman entry from cnpg.values.plugins before enabling typed backup/restore" }}
@@ -154,6 +158,7 @@ spec:
               "serverName" $state.restore.source.serverName
             ))
           )) }}
+        {{- end }}
         {{- end }}
         {{- toYaml $mergedClusterSpec | nindent 8 }}
       {{- end }}

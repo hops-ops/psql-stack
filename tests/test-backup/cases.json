@@ -1164,5 +1164,163 @@
         }
       ]
     }
+  },
+  {
+    "metadata": {
+      "name": "disabled-backup-preserves-legacy-plugin-override"
+    },
+    "spec": {
+      "compositionPath": "apis/psqlclusters/composition.yaml",
+      "xrdPath": "apis/psqlclusters/definition.yaml",
+      "timeoutSeconds": 90,
+      "validate": false,
+      "xr": {
+        "apiVersion": "hops.ops.com.ai/v1alpha1",
+        "kind": "PSQLCluster",
+        "metadata": {
+          "name": "app-db",
+          "namespace": "databases"
+        },
+        "spec": {
+          "clusterName": "production",
+          "storage": {
+            "size": "10Gi"
+          },
+          "scaleToZero": {
+            "enabled": true
+          },
+          "cnpg": {
+            "values": {
+              "plugins": [
+                {
+                  "name": "legacy.override.example"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "assertResources": [
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-cnpg-cluster"
+          },
+          "spec": {
+            "forProvider": {
+              "manifest": {
+                "spec": {
+                  "plugins": [
+                    {
+                      "name": "legacy.override.example"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "metadata": {
+      "name": "existing-applied-archive-identity"
+    },
+    "spec": {
+      "compositionPath": "apis/psqlclusters/composition.yaml",
+      "xrdPath": "apis/psqlclusters/definition.yaml",
+      "timeoutSeconds": 90,
+      "validate": false,
+      "xr": {
+        "apiVersion": "hops.ops.com.ai/v1alpha1",
+        "kind": "PSQLCluster",
+        "metadata": {
+          "name": "app-db",
+          "namespace": "databases"
+        },
+        "spec": {
+          "clusterName": "production",
+          "storage": {
+            "size": "10Gi"
+          },
+          "backup": {
+            "enabled": true,
+            "destinationPath": "s3://database-backups/production",
+            "credentials": {
+              "inheritFromIAMRole": true
+            },
+            "schedule": {
+              "cron": "0 0 6 * * *"
+            },
+            "monitoring": {
+              "enabled": false,
+              "labels": {
+                "release": "prometheus"
+              }
+            }
+          }
+        }
+      },
+      "assertResources": [
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-cnpg-cluster"
+          },
+          "spec": {
+            "forProvider": {
+              "manifest": {
+                "spec": {
+                  "plugins": [
+                    {
+                      "name": "barman-cloud.cloudnative-pg.io",
+                      "isWALArchiver": true,
+                      "parameters": {
+                        "barmanObjectName": "app-db-backups",
+                        "serverName": "app-db"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "observedResources": [
+        {
+          "apiVersion": "kubernetes.m.crossplane.io/v1alpha1",
+          "kind": "Object",
+          "metadata": {
+            "name": "app-db-cnpg-cluster",
+            "annotations": {
+              "crossplane.io/composition-resource-name": "cnpg-cluster",
+              "gotemplating.fn.crossplane.io/composition-resource-name": "cnpg-cluster"
+            },
+            "namespace": "databases"
+          },
+          "status": {
+            "atProvider": {
+              "manifest": {
+                "spec": {
+                  "plugins": [
+                    {
+                      "name": "barman-cloud.cloudnative-pg.io",
+                      "parameters": {
+                        "barmanObjectName": "app-db-backups",
+                        "serverName": "app-db"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
   }
 ]

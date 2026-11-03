@@ -18,7 +18,7 @@ import boto3
 from botocore.auth import S3SigV4Auth
 from botocore.awsrequest import AWSRequest
 from botocore.credentials import Credentials
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, BotoCoreError
 import yaml
 
 CONTEXT = sys.argv[1]
@@ -58,21 +58,24 @@ def wait(check, description, timeout=900):
             if result:
                 print(description, flush=True)
                 return result
-        except (RuntimeError, KeyError, subprocess.TimeoutExpired) as e:
+        except (RuntimeError, KeyError, subprocess.TimeoutExpired, ClientError, BotoCoreError) as e:
             last = str(e)[-800:]
         time.sleep(5)
     raise RuntimeError('Timed out: ' + description + '\n' + str(last))
 
-def render(kind, name, spec):
+def render(kind, name, spec, observed=None, include_status=False):
     plural = {'PSQLStack': 'psqlstacks', 'PSQLCluster': 'psqlclusters'}[kind]
     (ROOT / '.tmp').mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(dir=ROOT / '.tmp') as tmp:
         path = Path(tmp) / 'xr.yaml'
         path.write_text(yaml.safe_dump({'apiVersion': 'hops.ops.com.ai/v1alpha1', 'kind': kind,
             'metadata': {'name': name, 'namespace': NS}, 'spec': spec}))
-        docs = list(yaml.safe_load_all(run('up', 'composition', 'render',
-            '--xrd=apis/' + plural + '/definition.yaml', 'apis/' + plural + '/composition.yaml', str(path), '--quiet', timeout=300)))
-    return [d for d in docs if d and d['kind'] not in ['PSQLStack', 'PSQLCluster', 'Usage']]
+        command=['up', 'composition', 'render', '--xrd=apis/' + plural + '/definition.yaml', 'apis/' + plural + '/composition.yaml', str(path), '--quiet']
+        if observed:
+            obs=Path(tmp)/'observed.yaml';obs.write_text(yaml.safe_dump_all(observed))
+            command+=['--observed-resources='+str(obs)]
+        docs = list(yaml.safe_load_all(run(*command, timeout=300)))
+    return [d for d in docs if d and (include_status or d['kind'] not in ['PSQLStack', 'PSQLCluster', 'Usage'])]
 
 def cluster_spec(**extra):
     return {'clusterName': 'disposable', 'storage': {'size': '1Gi', 'class': 'standard'},
@@ -112,6 +115,16 @@ try:
     else:
         raise AssertionError('Admission allowed converting an initialized claim to a restore')
     PROOF['bootstrap_transition_rejected']=True
+    guard['metadata']['name']='restore-target-guard'
+    apply(guard)
+    guard['spec']['restore']['target']={'backupID':'20261102T120000','targetName':'changed'}
+    try:
+        apply(guard)
+    except RuntimeError as e:
+        assert 'immutable' in str(e),str(e)
+    else:
+        raise AssertionError('Admission allowed changing a recovery target')
+    PROOF['restore_target_change_rejected']=True
     # Versions are deliberately explicit and recorded. No current context changes.
     run('helm', 'upgrade', '--install', 'cert-manager', 'cert-manager', '--repo', 'https://charts.jetstack.io', '--version', 'v1.19.1', '--namespace', 'cert-manager', '--create-namespace', '--kube-context', CONTEXT, '--set', 'crds.enabled=true', '--wait', '--timeout', '10m', timeout=660)
     stack = render('PSQLStack', 'drill', {'clusterName': 'disposable', 'scaleToZeroPlugin': {'enabled': False}, 'storageClass': {'enabled': False}, 'snapshotClass': {'enabled': False}, 'backupPlugin': {'enabled': True}})
@@ -178,6 +191,14 @@ try:
     time.sleep(2)
     sql('seeded', "UPDATE recovery_proof SET value='after' WHERE id=1; INSERT INTO recovery_proof VALUES(2, 'new');")
     archive('seeded')
+    wait(lambda: get('objectstores.barmancloud.cnpg.io','seeded-backups').get('status',{}).get('serverRecoveryWindow',{}).get('seeded',{}).get('firstRecoverabilityPoint'), 'Barman recovery window observed',timeout=300)
+    observed=[]
+    for key,kind,name in [('cnpg-cluster','clusters.postgresql.cnpg.io','seeded'),('backup-objectstore','objectstores.barmancloud.cnpg.io','seeded-backups')]:
+        observed.append({'apiVersion':'kubernetes.m.crossplane.io/v1alpha1','kind':'Object','metadata':{'name':'seeded-'+key,'namespace':NS,'annotations':{'crossplane.io/composition-resource-name':key,'gotemplating.fn.crossplane.io/composition-resource-name':key}},'status':{'conditions':[{'type':'Ready','status':'True'}],'atProvider':{'manifest':get(kind,name)}}})
+    status_render=render('PSQLCluster','seeded',cluster_spec(backup=backup),observed=observed,include_status=True)
+    protection=next(d['status']['backup'] for d in status_render if d['kind']=='PSQLCluster')
+    assert protection['phase']=='Recoverable',protection
+    PROOF['observed_protection']=protection
     readonly = {'apiVersion':'barmancloud.cnpg.io/v1','kind':'ObjectStore','metadata':{'name':'source-readonly','namespace':NS},'spec':{'configuration':{'destinationPath':'s3://backups/drill','endpointURL':'http://object-store:9000','s3Credentials':{'accessKeyId':{'name':'object-store','key':'RESTORE_KEY_ID'},'secretAccessKey':{'name':'object-store','key':'RESTORE_SECRET_KEY'}},'wal':{'compression':'gzip'}}}}
     apply(readonly)
     for mode, target in [('latest', {}), ('time', {'backupID':backup_id,'targetTime':target_time}), ('named', {'backupID':backup_id,'targetName':'before_change'})]:
@@ -197,6 +218,7 @@ try:
     PROOF['base_backup'] = {'id':backup_id,'startedAt':done['status'].get('startedAt'),'stoppedAt':done['status'].get('stoppedAt')}
     PROOF['time_target'] = target_time
     PROOF['source_intact'] = True
+    PROOF['postgresql_version'] = sql('seeded','SELECT version();')
     PROOF['images'] = json.loads(kube('get','pods','-A','-o','json'))
     PROOF['images'] = sorted({c['image'] for p in PROOF['images']['items'] for c in p['spec']['containers']})
     PROOF['passed'] = True

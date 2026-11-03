@@ -1,0 +1,87 @@
+{
+  "context": "kind-psql-backup-e2e-verify",
+  "started": "2026-11-03T00:02:10.222758+00:00",
+  "restores": {
+    "latest": {
+      "value": "1:after,2:new",
+      "expected": "1:after,2:new",
+      "ready": true
+    },
+    "time": {
+      "value": "1:before",
+      "expected": "1:before",
+      "ready": true
+    },
+    "named": {
+      "value": "1:before",
+      "expected": "1:before",
+      "ready": true
+    }
+  },
+  "bootstrap_transition_rejected": true,
+  "charts": [
+    {
+      "name": "plugin-barman-cloud",
+      "repository": "https://cloudnative-pg.github.io/charts",
+      "version": "0.8.1"
+    },
+    {
+      "name": "cloudnative-pg",
+      "repository": "https://cloudnative-pg.github.io/charts",
+      "version": "0.29.1"
+    }
+  ],
+  "read_only_source_permissions_verified": true,
+  "base_backup": {
+    "id": "20261103T001230",
+    "startedAt": "2026-11-03T00:12:30Z",
+    "stoppedAt": "2026-11-03T00:12:40Z"
+  },
+  "time_target": "2026-11-03T00:12:46.322429Z",
+  "source_intact": true,
+  "images": [
+    "docker.io/kindest/kindnetd:v20260528-9350166c",
+    "docker.io/kindest/local-path-provisioner:v20260521-9fb22683",
+    "ghcr.io/cloudnative-pg/cloudnative-pg:1.30.1",
+    "ghcr.io/cloudnative-pg/plugin-barman-cloud:v0.15.1",
+    "ghcr.io/cloudnative-pg/postgresql:17",
+    "quay.io/jetstack/cert-manager-cainjector:v1.19.1",
+    "quay.io/jetstack/cert-manager-controller:v1.19.1",
+    "quay.io/jetstack/cert-manager-webhook:v1.19.1",
+    "registry.k8s.io/coredns/coredns:v1.14.2",
+    "registry.k8s.io/etcd:3.6.8-0",
+    "registry.k8s.io/kube-apiserver:v1.36.1",
+    "registry.k8s.io/kube-controller-manager:v1.36.1",
+    "registry.k8s.io/kube-proxy:v1.36.1",
+    "registry.k8s.io/kube-scheduler:v1.36.1",
+    "rustfs/rustfs:1.0.3"
+  ],
+  "passed": true,
+  "completed": "2026-11-03T00:18:36.198048+00:00",
+  "observed_protection": {
+    "firstRecoverabilityPoint": "2026-11-03T00:12:40Z",
+    "lastFailedBackupTime": "",
+    "lastSuccessfulBackupTime": "2026-11-03T00:12:40Z",
+    "objectStoreName": "seeded-backups",
+    "phase": "Recoverable"
+  },
+  "postgresql_version": "PostgreSQL 17.11 (Debian 17.11-1.pgdg11+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 10.2.1-6) 10.2.1 20210110, 64-bit",
+  "restore_target_change_rejected": true,
+  "read_only_source_permissions_verified_after_policy_update": true,
+  "source_commit": "3539fc58fcfd2a450d06e4fca2b3924323d16d6f",
+  "local_validation_notes": [
+    "Registry timeouts required importing the identical cached PostgreSQL ARM64 image and downloading the Barman sidecar via the host network.",
+    "A missing catalog-list permission in the initial RustFS fixture was corrected to explicit GetBucketLocation/ListBucket/GetObject; read and list succeeded and upload/delete denial was reverified."
+  ],
+  "cleanup": {
+    "cluster_deleted": true,
+    "node_container_deleted": true,
+    "verification": "kind delete succeeded; kind get clusters lists only the pre-existing hops cluster; disposable API endpoint refuses connections."
+  },
+  "contracts": {
+    "native_render": 31,
+    "prometheus_scenarios": 12,
+    "admission_rejections": 2
+  },
+  "drill_scope": "Rendered target manifests with real CNPG/Barman controllers. Read-only catalog policy was corrected during the local run, then read/list/upload/delete permissions and admission/status checks were independently verified. CI runs the complete corrected script from a clean cluster."
+}

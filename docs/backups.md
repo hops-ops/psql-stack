@@ -226,3 +226,8 @@ EKS E2E suite covers provider/composition reconciliation and snapshot branches.
 Upstream references: [Barman installation](https://cloudnative-pg.io/plugin-barman-cloud/docs/installation/),
 [backup/recovery API](https://cloudnative-pg.io/plugin-barman-cloud/docs/usage/),
 [observability](https://cloudnative-pg.io/plugin-barman-cloud/docs/observability/).
+
+The [2026-11-02 seeded drill evidence](evidence/backups-2026-11-02.json) records
+actual latest/time/named row checks, read-only access enforcement, observed
+recoverability, versions, local test adjustments and disposable-cluster cleanup.
+CI separately runs the corrected full script from a clean environment.

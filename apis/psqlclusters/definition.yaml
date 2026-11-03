@@ -363,7 +363,7 @@ spec:
                     type: string
                     description: Barman recovery window, not bucket object expiration. Defaults to 30d.
                     default: 30d
-                    pattern: ^[1-9][0-9]*[dwmy]$
+                    pattern: ^[1-9][0-9]*[dwm]$
                   compression:
                     type: string
                     default: gzip

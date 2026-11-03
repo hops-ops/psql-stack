@@ -21,7 +21,8 @@ ObjectStore must be in the database's **target namespace**, which may differ fro
 the XR's control-plane namespace. Non-AWS stores can set `endpointURL` and
 `endpointCA`; existing ObjectStores can support other Barman storage providers.
 
-`retentionPolicy: 30d` is a Barman recovery window. Do not add bucket age-expiration
+`retentionPolicy: 30d` is a Barman recovery window. Units are `d` (days), `w`
+(weeks), and `m` (months). Do not add bucket age-expiration
 rules that delete the last current backup or required WAL when archiving stops.
 Versioned buckets may expire noncurrent versions and incomplete multipart uploads
 under a separately reviewed policy. Credentials must remain valid for retention.

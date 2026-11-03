@@ -125,6 +125,14 @@ try:
     else:
         raise AssertionError('Admission allowed changing a recovery target')
     PROOF['restore_target_change_rejected']=True
+    invalid_retention={'apiVersion':'hops.ops.com.ai/v1alpha1','kind':'PSQLCluster','metadata':{'name':'retention-guard','namespace':NS},'spec':cluster_spec(backup={'enabled':True,'destinationPath':'s3://backups/drill','credentials':{'inheritFromIAMRole':True},'retentionPolicy':'1y'})}
+    try:
+        apply(invalid_retention)
+    except RuntimeError as e:
+        assert 'retentionPolicy' in str(e) and '1y' in str(e),str(e)
+    else:
+        raise AssertionError('Admission allowed a retention unit unsupported by Barman')
+    PROOF['unsupported_retention_rejected']=True
     # Versions are deliberately explicit and recorded. No current context changes.
     run('helm', 'upgrade', '--install', 'cert-manager', 'cert-manager', '--repo', 'https://charts.jetstack.io', '--version', 'v1.19.1', '--namespace', 'cert-manager', '--create-namespace', '--kube-context', CONTEXT, '--set', 'crds.enabled=true', '--wait', '--timeout', '10m', timeout=660)
     stack = render('PSQLStack', 'drill', {'clusterName': 'disposable', 'scaleToZeroPlugin': {'enabled': False}, 'storageClass': {'enabled': False}, 'snapshotClass': {'enabled': False}, 'backupPlugin': {'enabled': True}})

@@ -20,7 +20,7 @@ spec:
     size: 100Gi
   postgresql:
     # renovate: datasource=docker depName=cloudnative-pg/postgresql registryUrl=https://ghcr.io
-    version: "17"
+    version: "18"
     parameters:
       shared_buffers: "1GB"
       effective_cache_size: "3GB"

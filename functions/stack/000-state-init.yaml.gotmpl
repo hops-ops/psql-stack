@@ -120,7 +120,7 @@
 # ==============================================================================
 {{- $barman := $spec.backupPlugin | default dict }}
 # renovate: datasource=helm depName=plugin-barman-cloud registryUrl=https://cloudnative-pg.github.io/charts
-{{- $barmanChartVersion := $barman.chartVersion | default "0.8.1" }}
+{{- $barmanChartVersion := $barman.chartVersion | default "0.9.0" }}
 {{- $state := dict
   "name" $name
   "clusterName" $clusterName

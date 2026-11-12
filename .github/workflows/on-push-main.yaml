@@ -76,7 +76,7 @@ jobs:
         ]
       timeout-minutes: 90
       cleanup-timeout-minutes: 30
-      delete-extra-resources-timeout-minutes: 30
+      delete-extra-resources-timeout-minutes: 60
 
   version-and-tag:
     name: Version and Tag

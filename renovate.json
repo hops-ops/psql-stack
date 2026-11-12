@@ -45,12 +45,28 @@
       "groupName": "aws-providers"
     },
     {
+      "description": "Use fix(deps) for XR-rendered chart and runtime pins so they cut a patch release",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchFileNames": [
+        "apis/**",
+        "functions/**"
+      ],
+      "semanticCommitType": "fix",
+      "semanticCommitScope": "deps"
+    },
+    {
       "description": "Use feat(deps): commit prefix for hops-ops Crossplane packages (github-releases datasource)",
       "matchManagers": [
         "custom.regex"
       ],
       "matchDatasources": [
         "github-releases"
+      ],
+      "matchFileNames": [
+        "apis/**/configuration.yaml",
+        "upbound.yaml"
       ],
       "semanticCommitType": "feat",
       "semanticCommitScope": "deps"
@@ -62,6 +78,10 @@
       ],
       "matchDatasources": [
         "docker"
+      ],
+      "matchFileNames": [
+        "apis/**/configuration.yaml",
+        "upbound.yaml"
       ],
       "semanticCommitType": "feat",
       "semanticCommitScope": "deps"

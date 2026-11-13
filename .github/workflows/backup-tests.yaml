@@ -20,7 +20,7 @@ jobs:
         skip-login: true
     - uses: azure/setup-helm@v5
       with:
-        version: v4.3.1
+        version: v4.3.2
     - uses: helm/kind-action@v1.15.2
       with:
         install_only: true

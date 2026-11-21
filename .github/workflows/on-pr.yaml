@@ -92,7 +92,7 @@ jobs:
       # CNPG bootstrap + snapshot fork.
       timeout-minutes: 90
       cleanup-timeout-minutes: 30
-      delete-extra-resources-timeout-minutes: 30
+      delete-extra-resources-timeout-minutes: 60
 
   publish:
     needs:
